@@ -367,11 +367,6 @@ def show_client_detail():
     
     st.divider()
     
-    # Sección de configuración de actividades y frecuencias
-    show_client_activities_section(client_id)
-    
-    st.divider()
-    
     # ========== SECCIÓN MEJORADA DE CALENDARIO CON EDICIÓN ==========
     st.subheader("📅 Calendario de Actividades")
     
@@ -381,27 +376,30 @@ def show_client_detail():
     with col1:
         view_type = st.selectbox(
             "Vista del calendario:",
-            ["Edición Inline", "Calendario por Mes", "Año Completo Editable", "Solo Lectura"],
-            help="Selecciona cómo quieres ver y editar el calendario",
+            ["Vista por Mes", "Edición por Año", "Año Completo"],
+            help="Selecciona cómo quieres ver el calendario",
             key=f"view_type_{client_id}"
         )
     
     with col2:
-        if view_type == "Solo Lectura":
-            readonly_view = st.selectbox(
-                "Tipo de vista:",
-                ["Todas las Fechas", "Año Completo"],
-                key=f"readonly_view_{client_id}"
+        if view_type == "Vista por Mes":
+            # Selector de mes para vista mensual
+            months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            
+            selected_month = st.selectbox(
+                "Selecciona el mes:",
+                months,
+                index=datetime.now().month - 1,  # Mes actual como default
+                key=f"month_selector_{client_id}"
             )
     
     with col3:
-        # Opciones adicionales según la vista
-        if view_type in ["Edición Inline", "Calendario por Mes"]:
-            auto_save = st.checkbox(
-                "Auto-guardar",
-                help="Guardar automáticamente al cambiar fechas",
-                key=f"auto_save_{client_id}"
-            )
+        # Información adicional según la vista
+        if view_type == "Vista por Mes":
+            st.write("*Vista de solo lectura*")
+        elif view_type == "Edición por Año":
+            st.write("*Vista editable*")
     
     with col4:
         if st.button("🔄 Recalcular", key=f"recalc_{client_id}"):
@@ -437,113 +435,48 @@ def show_client_detail():
     
     # Mostrar vista según selección
     try:
-        if view_type == "Edición Inline":
-            show_inline_editable_calendar(client_id)
+        if view_type == "Vista por Mes":
+            show_monthly_readonly_calendar(client_id, selected_month)
         
-        elif view_type == "Calendario por Mes":
-            show_monthly_editable_calendar(client_id)
-        
-        elif view_type == "Año Completo Editable":
+        elif view_type == "Edición por Año":
             show_editable_full_year_calendar(client_id)
         
-        elif view_type == "Solo Lectura":
-            # Usar las funciones existentes para vista de solo lectura
-            if readonly_view == "Año Completo":
-                calendar_df = create_client_calendar_table(client_id, show_full_year=True)
-                if not calendar_df.empty:
-                    st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+        elif view_type == "Año Completo":
+            calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+            if not calendar_df.empty:
+                st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+                
+                # Mostrar resumen del año
+                try:
+                    from calendar_utils import get_client_year_summary
+                    summary = get_client_year_summary(client_id)
                     
-                    # Mostrar resumen del año
-                    try:
-                        from calendar_utils import get_client_year_summary
-                        summary = get_client_year_summary(client_id)
-                        
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total de Fechas", summary['total_fechas'])
-                        with col2:
-                            st.metric("Actividades", summary['actividades'])
-                        with col3:
-                            st.metric("Meses con Actividad", summary['meses_con_actividad'])
-                        with col4:
-                            if summary['proxima_fecha']:
-                                next_date = datetime.strptime(summary['proxima_fecha']['fecha'], '%Y-%m-%d')
-                                st.metric("Próxima Fecha", next_date.strftime('%d-%b'))
-                            else:
-                                st.metric("Próxima Fecha", "N/A")
-                    except:
-                        pass
-                else:
-                    st.info("No hay fechas calculadas para mostrar el año completo.")
-            
-            elif readonly_view == "Todas las Fechas":
-                # Mostrar todas las fechas en vista de solo lectura
-                dates_df = get_calculated_dates(client_id)
-                if not dates_df.empty:
-                    st.markdown("### 📅 Todas las Fechas del Cliente")
-                    
-                    # Mostrar información resumen
-                    total_dates = len(dates_df)
-                    activities_count = len(dates_df['activity_name'].unique())
-                    
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("📅 Total de Fechas", total_dates)
+                        st.metric("Total de Fechas", summary['total_fechas'])
                     with col2:
-                        st.metric("🏷️ Actividades", activities_count)
+                        st.metric("Actividades", summary['actividades'])
                     with col3:
-                        max_dates_per_activity = dates_df.groupby('activity_name')['date_position'].max().max()
-                        st.metric("📊 Máx. Fechas/Actividad", max_dates_per_activity)
-                    
-                    # Preparar datos para mostrar (solo lectura)
-                    readonly_df = prepare_calendar_for_editing(dates_df)
-                    
-                    if not readonly_df.empty:
-                        # Configurar columnas para solo lectura
-                        column_config = {}
-                        for col in readonly_df.columns:
-                            if col != 'Actividad':
-                                column_config[col] = st.column_config.DateColumn(
-                                    col,
-                                    help=f"Fecha programada para {col.lower()}",
-                                    format="DD/MM/YYYY",
-                                    disabled=True,  # Solo lectura
-                                )
-                        
-                        # Mostrar tabla de solo lectura
-                        st.dataframe(
-                            readonly_df,
-                            column_config=column_config,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                        
-                        # Mostrar resumen adicional
-                        st.markdown("### 📊 Resumen por Actividad")
-                        for activity in dates_df['activity_name'].unique():
-                            activity_dates = dates_df[dates_df['activity_name'] == activity]
-                            fecha_count = len(activity_dates)
-                            
-                            # Próxima fecha de esta actividad
-                            try:
-                                future_dates = activity_dates[pd.to_datetime(activity_dates['date']) > datetime.now()]
-                                if not future_dates.empty:
-                                    next_date = future_dates.iloc[0]['date']
-                                    next_date_obj = datetime.strptime(next_date, '%Y-%m-%d')
-                                    days_until = (next_date_obj - datetime.now()).days
-                                    st.write(f"**{activity}**: {fecha_count} fechas • Próxima en {days_until} días ({next_date_obj.strftime('%d/%m/%Y')})")
-                                else:
-                                    st.write(f"**{activity}**: {fecha_count} fechas • Sin fechas futuras")
-                            except:
-                                st.write(f"**{activity}**: {fecha_count} fechas")
-                    else:
-                        st.info("No hay datos para mostrar.")
-                else:
-                    st.info("No hay fechas calculadas para mostrar.")
+                        st.metric("Meses con Actividad", summary['meses_con_actividad'])
+                    with col4:
+                        if summary['proxima_fecha']:
+                            next_date = datetime.strptime(summary['proxima_fecha']['fecha'], '%Y-%m-%d')
+                            st.metric("Próxima Fecha", next_date.strftime('%d-%b'))
+                        else:
+                            st.metric("Próxima Fecha", "N/A")
+                except:
+                    pass
+            else:
+                st.info("No hay fechas calculadas para mostrar el año completo.")
                 
     except Exception as e:
         st.error(f"Error al mostrar el calendario: {e}")
         st.info("Intenta recalcular las fechas o verifica que las actividades estén configuradas correctamente.")
+    
+    st.divider()
+    
+    # Sección de configuración de actividades y frecuencias
+    show_client_activities_section(client_id)
     
     # Sección de acciones rápidas
     st.divider()
@@ -580,6 +513,160 @@ def show_client_detail():
                 st.session_state[f'confirm_clear_{client_id}'] = True
                 st.warning("⚠️ Presiona nuevamente para confirmar la eliminación de todas las fechas")
                 st.rerun()
+
+# ========== FUNCIONES DE VISTA DE CALENDARIO ==========
+
+def show_monthly_readonly_calendar(client_id, selected_month):
+    """Muestra un calendario mensual en formato de tabla simple y compacta"""
+    
+    dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        st.info("No hay fechas calculadas.")
+        return
+    
+    st.markdown(f"### 📅 Calendario de {selected_month}")
+    st.write("*Vista de solo lectura - Fechas programadas para este mes*")
+    
+    # Convertir nombre del mes a número
+    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    month_num = months.index(selected_month) + 1
+    
+    # Filtrar fechas del mes seleccionado
+    month_dates = []
+    for _, row in dates_df.iterrows():
+        try:
+            date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
+            if date_obj.month == month_num:
+                # Mapear días de la semana al español
+                days_spanish = {
+                    'Monday': 'Lunes',
+                    'Tuesday': 'Martes', 
+                    'Wednesday': 'Miércoles',
+                    'Thursday': 'Jueves',
+                    'Friday': 'Viernes',
+                    'Saturday': 'Sábado',
+                    'Sunday': 'Domingo'
+                }
+                day_english = date_obj.strftime('%A')
+                day_spanish = days_spanish.get(day_english, day_english)
+                
+                # Mapear meses al español para formato abreviado
+                months_spanish = {
+                    1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+                    7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+                }
+                month_abbr = months_spanish[date_obj.month]
+                formatted_date = f"{date_obj.day:02d}-{month_abbr}"
+                
+                month_dates.append({
+                    'activity_name': row['activity_name'],
+                    'date': date_obj,
+                    'date_position': row['date_position'],
+                    'formatted_date': formatted_date,
+                    'day_name': day_spanish
+                })
+        except:
+            continue
+    
+    if not month_dates:
+        st.info(f"No hay actividades programadas para {selected_month}")
+        return
+    
+    # Mostrar información resumen del mes
+    total_dates_month = len(month_dates)
+    activities_list = list(set([d['activity_name'] for d in month_dates]))
+    activities_count = len(activities_list)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📅 Fechas en el Mes", total_dates_month)
+    with col2:
+        st.metric("🏷️ Actividades", activities_count)
+    with col3:
+        # Próxima fecha del mes
+        try:
+            future_dates = [d for d in month_dates if d['date'] > datetime.now()]
+            if future_dates:
+                next_date = min(future_dates, key=lambda x: x['date'])
+                days_until = (next_date['date'] - datetime.now()).days
+                st.metric("📆 Próxima Fecha", f"{days_until} días")
+            else:
+                st.metric("📆 Próxima Fecha", "N/A")
+        except:
+            st.metric("📆 Próxima Fecha", "N/A")
+    
+    # Crear tabla agrupada por actividad - solo fechas del mes seleccionado
+    table_data = {}
+    date_details = {}  # Para almacenar detalles de fecha y día
+    
+    # Agrupar fechas por actividad y posición, solo para este mes
+    for date_info in month_dates:
+        activity = date_info['activity_name']
+        position = date_info['date_position']
+        
+        if activity not in table_data:
+            table_data[activity] = {}
+            date_details[activity] = {}
+        
+        table_data[activity][position] = date_info['formatted_date']
+        date_details[activity][position] = date_info['day_name']
+    
+    # Crear DataFrame para la tabla con fechas y días alternados
+    table_rows = []
+    
+    # Determinar cuántas fechas tiene cada actividad en este mes específico
+    for activity in sorted(table_data.keys()):
+        row = {'Actividad': activity}
+        activity_positions = sorted(table_data[activity].keys())
+        
+        # Agregar columnas alternando Fecha y Día para cada posición que existe en este mes
+        for i, pos in enumerate(activity_positions, 1):
+            fecha_col = f'Fecha {i}'
+            dia_col = f'Día {i}'
+            
+            row[fecha_col] = table_data[activity][pos]
+            row[dia_col] = date_details[activity][pos]
+        
+        table_rows.append(row)
+    
+    if table_rows:
+        df_table = pd.DataFrame(table_rows)
+        
+        # Configurar columnas para mejor visualización
+        column_config = {
+            'Actividad': st.column_config.TextColumn(
+                'Actividad',
+                width='medium',
+                help='Nombre de la actividad'
+            )
+        }
+        
+        # Configurar columnas de fecha y día
+        for col in df_table.columns:
+            if col.startswith('Fecha'):
+                column_config[col] = st.column_config.TextColumn(
+                    col,
+                    width='small',
+                    help=f'Fecha programada'
+                )
+            elif col.startswith('Día'):
+                column_config[col] = st.column_config.TextColumn(
+                    col,
+                    width='small',
+                    help=f'Día de la semana'
+                )
+        
+        # Mostrar tabla
+        st.dataframe(
+            df_table,
+            column_config=column_config,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("No hay fechas para mostrar en formato de tabla.")
 
 # ========== FUNCIONES DE EDICIÓN DE FECHAS ==========
 
@@ -845,7 +932,7 @@ def show_editable_full_year_calendar(client_id):
                     show_editable_month_view(client_id, month_num, month, dates_df)
 
 def show_editable_month_view(client_id, month_num, month_name, dates_df):
-    """Muestra la vista editable de un mes específico"""
+    """Muestra la vista editable de un mes específico optimizada en bloques de 4"""
     
     # Filtrar fechas del mes
     month_dates = []
@@ -874,34 +961,77 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
             activities[activity] = []
         activities[activity].append(date_info)
     
-    # Mostrar cada actividad del mes
+    # Mostrar cada actividad del mes en bloques optimizados
     for activity, dates in activities.items():
         st.markdown(f"**📋 {activity}**")
         
-        # Organizar fechas en columnas
-        cols = st.columns(min(len(dates), 4))
+        # Dividir fechas en bloques de 4 para optimizar el espacio
+        dates_sorted = sorted(dates, key=lambda x: x['position'])
         
-        for idx, date_info in enumerate(dates[:4]):  # Máximo 4 fechas por fila
-            with cols[idx]:
-                # Input de fecha
-                new_date = st.date_input(
-                    f"Fecha {date_info['position']}",
-                    value=date_info['date'].date(),
-                    key=f"month_edit_{client_id}_{activity}_{date_info['position']}_{month_num}",
-                    help=f"Editar fecha para {activity}"
-                )
+        # Procesar en bloques de 4
+        for i in range(0, len(dates_sorted), 4):
+            block_dates = dates_sorted[i:i+4]
+            
+            # Crear 4 columnas para el bloque
+            cols = st.columns(4)
+            
+            for idx, date_info in enumerate(block_dates):
+                with cols[idx]:
+                    # Contenedor compacto para cada fecha
+                    with st.container():
+                        st.markdown(f"**Fecha {date_info['position']}**")
+                        
+                        # Input de fecha más compacto
+                        new_date = st.date_input(
+                            "",  # Sin label para ahorrar espacio
+                            value=date_info['date'].date(),
+                            key=f"month_edit_{client_id}_{activity}_{date_info['position']}_{month_num}",
+                            help=f"Editar fecha {date_info['position']} para {activity}",
+                            format="DD/MM/YYYY"
+                        )
+                        
+                        # Indicador visual de cambio
+                        if new_date != date_info['date'].date():
+                            st.markdown("🔄 *Modificada*")
+                        
+                        # Botón de guardado compacto
+                        if st.button("💾", 
+                                   key=f"save_month_{client_id}_{activity}_{date_info['position']}_{month_num}",
+                                   help="Guardar esta fecha",
+                                   use_container_width=True):
+                            # Manejo seguro de fechas
+                            date_str = new_date.strftime('%Y-%m-%d') if hasattr(new_date, 'strftime') else str(new_date)
+                            update_calculated_date(client_id, activity, date_info['position'], date_str)
+                            st.success("✅ Actualizada")
+                            st.rerun()
+            
+            # Espaciado entre bloques
+            if i + 4 < len(dates_sorted):
+                st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Botón para guardar todas las fechas de la actividad
+        st.markdown("---")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button(f"💾 Guardar todas las fechas de {activity}", 
+                        key=f"save_all_{client_id}_{activity}_{month_num}",
+                        use_container_width=True):
+                changes_made = 0
+                for date_info in dates_sorted:
+                    # Obtener el valor actual del input
+                    input_key = f"month_edit_{client_id}_{activity}_{date_info['position']}_{month_num}"
+                    if input_key in st.session_state:
+                        new_date = st.session_state[input_key]
+                        if new_date != date_info['date'].date():
+                            date_str = new_date.strftime('%Y-%m-%d')
+                            update_calculated_date(client_id, activity, date_info['position'], date_str)
+                            changes_made += 1
                 
-                # Mostrar si cambió
-                if new_date != date_info['date'].date():
-                    st.markdown("🔄 *Modificada*")
-                
-                # Botón individual para guardar
-                if st.button("💾", 
-                           key=f"save_month_{client_id}_{activity}_{date_info['position']}_{month_num}",
-                           help="Guardar esta fecha"):
-                    update_calculated_date(client_id, activity, date_info['position'], new_date.strftime('%Y-%m-%d'))
-                    st.success("✅ Fecha actualizada")
+                if changes_made > 0:
+                    st.success(f"✅ {changes_made} fechas actualizadas para {activity}")
                     st.rerun()
+                else:
+                    st.info("No hay cambios para guardar")
         
         st.markdown("---")
 
@@ -954,6 +1084,7 @@ def prepare_calendar_for_editing(dates_df):
     
     return pd.DataFrame(result_data)
 
+
 def save_inline_changes(client_id, original_df, edited_df):
     """Guarda los cambios realizados en el editor inline - Maneja todas las fechas disponibles"""
     
@@ -965,15 +1096,39 @@ def save_inline_changes(client_id, original_df, edited_df):
         i = 1
         while f'Fecha {i}' in row:
             col_name = f'Fecha {i}'
-            if col_name in row and pd.notna(row[col_name]):
+            date_value = row[col_name]
+            
+            if pd.notna(date_value) and date_value is not None:
                 # Manejo más robusto de diferentes tipos de fecha
-                date_value = row[col_name]
-                if hasattr(date_value, 'strftime'):
-                    dates_list.append(date_value.strftime('%Y-%m-%d'))
-                elif isinstance(date_value, str):
-                    dates_list.append(date_value)
-                else:
-                    dates_list.append(str(date_value))
+                try:
+                    if hasattr(date_value, 'strftime'):
+                        # Es un objeto datetime o date
+                        dates_list.append(date_value.strftime('%Y-%m-%d'))
+                    elif isinstance(date_value, str):
+                        # Es una string, verificar si es una fecha válida
+                        if date_value.strip():
+                            # Intentar parsear como fecha
+                            try:
+                                parsed_date = pd.to_datetime(date_value)
+                                dates_list.append(parsed_date.strftime('%Y-%m-%d'))
+                            except:
+                                dates_list.append(date_value)
+                        else:
+                            dates_list.append(None)
+                    else:
+                        # Intentar convertir a string y luego a fecha
+                        try:
+                            date_str = str(date_value)
+                            if date_str and date_str != 'nan':
+                                parsed_date = pd.to_datetime(date_str)
+                                dates_list.append(parsed_date.strftime('%Y-%m-%d'))
+                            else:
+                                dates_list.append(None)
+                        except:
+                            dates_list.append(None)
+                except Exception as e:
+                    print(f"Error procesando fecha en posición {i}: {e}")
+                    dates_list.append(None)
             else:
                 dates_list.append(None)
             i += 1
@@ -992,15 +1147,35 @@ def save_monthly_changes(client_id, original_df, edited_df, month_num):
         i = 1
         while f'Fecha {i}' in row:
             col_name = f'Fecha {i}'
-            if col_name in row and pd.notna(row[col_name]):
+            date_value = row[col_name]
+            
+            if pd.notna(date_value) and date_value is not None:
                 # Manejo más robusto de diferentes tipos de fecha
-                date_value = row[col_name]
-                if hasattr(date_value, 'strftime'):
-                    dates_list.append(date_value.strftime('%Y-%m-%d'))
-                elif isinstance(date_value, str):
-                    dates_list.append(date_value)
-                else:
-                    dates_list.append(str(date_value))
+                try:
+                    if hasattr(date_value, 'strftime'):
+                        dates_list.append(date_value.strftime('%Y-%m-%d'))
+                    elif isinstance(date_value, str):
+                        if date_value.strip():
+                            try:
+                                parsed_date = pd.to_datetime(date_value)
+                                dates_list.append(parsed_date.strftime('%Y-%m-%d'))
+                            except:
+                                dates_list.append(date_value)
+                        else:
+                            dates_list.append(None)
+                    else:
+                        try:
+                            date_str = str(date_value)
+                            if date_str and date_str != 'nan':
+                                parsed_date = pd.to_datetime(date_str)
+                                dates_list.append(parsed_date.strftime('%Y-%m-%d'))
+                            else:
+                                dates_list.append(None)
+                        except:
+                            dates_list.append(None)
+                except Exception as e:
+                    print(f"Error procesando fecha en posición {i}: {e}")
+                    dates_list.append(None)
             else:
                 dates_list.append(None)
             i += 1
@@ -1034,8 +1209,20 @@ def show_monthly_changes_preview(original_df, edited_df, month_name):
                     if not changes_found:
                         changes_found = True
                     
-                    orig_str = "Sin fecha" if pd.isna(orig_val) else orig_val.strftime('%d/%m/%Y')
-                    edit_str = "Sin fecha" if pd.isna(edit_val) else edit_val.strftime('%d/%m/%Y')
+                    # Manejo seguro de fechas
+                    if pd.isna(orig_val):
+                        orig_str = "Sin fecha"
+                    elif hasattr(orig_val, 'strftime'):
+                        orig_str = orig_val.strftime('%d/%m/%Y')
+                    else:
+                        orig_str = str(orig_val)
+                    
+                    if pd.isna(edit_val):
+                        edit_str = "Sin fecha"
+                    elif hasattr(edit_val, 'strftime'):
+                        edit_str = edit_val.strftime('%d/%m/%Y')
+                    else:
+                        edit_str = str(edit_val)
                     
                     st.write(f"**{activity}** - {col}: `{orig_str}` → `{edit_str}`")
                 
@@ -1043,7 +1230,11 @@ def show_monthly_changes_preview(original_df, edited_df, month_name):
                     if not changes_found:
                         changes_found = True
                     
-                    st.write(f"**{activity}** - {col}: `{orig_val.strftime('%d/%m/%Y')}` → `{edit_val.strftime('%d/%m/%Y')}`")
+                    # Manejo seguro de fechas para cambios
+                    orig_str = orig_val.strftime('%d/%m/%Y') if hasattr(orig_val, 'strftime') else str(orig_val)
+                    edit_str = edit_val.strftime('%d/%m/%Y') if hasattr(edit_val, 'strftime') else str(edit_val)
+                    
+                    st.write(f"**{activity}** - {col}: `{orig_str}` → `{edit_str}`")
     
     if not changes_found:
         st.info(f"No se detectaron cambios para {month_name}.")
@@ -1074,8 +1265,20 @@ def show_changes_preview(original_df, edited_df):
                     if not changes_found:
                         changes_found = True
                     
-                    orig_str = "Sin fecha" if pd.isna(orig_val) else orig_val.strftime('%d/%m/%Y')
-                    edit_str = "Sin fecha" if pd.isna(edit_val) else edit_val.strftime('%d/%m/%Y')
+                    # Manejo seguro de fechas
+                    if pd.isna(orig_val):
+                        orig_str = "Sin fecha"
+                    elif hasattr(orig_val, 'strftime'):
+                        orig_str = orig_val.strftime('%d/%m/%Y')
+                    else:
+                        orig_str = str(orig_val)
+                    
+                    if pd.isna(edit_val):
+                        edit_str = "Sin fecha"
+                    elif hasattr(edit_val, 'strftime'):
+                        edit_str = edit_val.strftime('%d/%m/%Y')
+                    else:
+                        edit_str = str(edit_val)
                     
                     st.write(f"**{activity}** - {col}: `{orig_str}` → `{edit_str}`")
                 
@@ -1083,7 +1286,11 @@ def show_changes_preview(original_df, edited_df):
                     if not changes_found:
                         changes_found = True
                     
-                    st.write(f"**{activity}** - {col}: `{orig_val.strftime('%d/%m/%Y')}` → `{edit_val.strftime('%d/%m/%Y')}`")
+                    # Manejo seguro de fechas para cambios
+                    orig_str = orig_val.strftime('%d/%m/%Y') if hasattr(orig_val, 'strftime') else str(orig_val)
+                    edit_str = edit_val.strftime('%d/%m/%Y') if hasattr(edit_val, 'strftime') else str(edit_val)
+                    
+                    st.write(f"**{activity}** - {col}: `{orig_str}` → `{edit_str}`")
     
     if not changes_found:
         st.info("No se detectaron cambios.")
@@ -1527,9 +1734,14 @@ def show_dates_editing_tab(client):
                             new_date = st.date_input(
                                 f"Fecha {position}",
                                 value=current_date,
-                                key=f"modal_edit_{selected_activity}_{position}"
+                                key=f"modal_edit_{selected_activity}_{position}",
+                                format="DD/MM/YYYY"
                             )
-                            edited_dates[position] = new_date.strftime('%Y-%m-%d')
+                            # Manejo seguro de fechas
+                            if hasattr(new_date, 'strftime'):
+                                edited_dates[position] = new_date.strftime('%Y-%m-%d')
+                            else:
+                                edited_dates[position] = str(new_date)
             
             # Botón para guardar fechas de esta actividad
             if st.button(f"💾 Guardar fechas de {selected_activity}", 
@@ -1970,9 +2182,14 @@ def show_date_editing_section(client_id):
                                 new_date = st.date_input(
                                     f"Fecha {position}:",
                                     value=original_date,
-                                    key=f"date_{position}_{selected_activity}"
+                                    key=f"date_{position}_{selected_activity}",
+                                    format="DD/MM/YYYY"
                                 )
-                                edited_dates[position] = new_date.strftime('%Y-%m-%d')
+                                # Manejo seguro de fechas
+                                if hasattr(new_date, 'strftime'):
+                                    edited_dates[position] = new_date.strftime('%Y-%m-%d')
+                                else:
+                                    edited_dates[position] = str(new_date)
                 
                 if st.form_submit_button("💾 Guardar Cambios"):
                     # Guardar todas las fechas editadas

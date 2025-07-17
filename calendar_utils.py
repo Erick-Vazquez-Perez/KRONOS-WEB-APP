@@ -29,6 +29,12 @@ def create_client_calendar_table(client_id, show_full_year=True):
 
 def create_full_year_calendar_table(dates_df, activities):
     """Crea una tabla de calendario completa organizada por meses"""
+    # Mapeo de meses en español
+    month_names_spanish = {
+        1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+    }
+    
     # Agrupar fechas por actividad y mes
     table_data = []
     
@@ -44,7 +50,7 @@ def create_full_year_calendar_table(dates_df, activities):
         # Crear columnas para cada mes
         for month in months:
             month_str = str(month)  # Ej: "2025-01"
-            month_name = month.strftime('%b')  # Ej: "Ene"
+            month_name = month_names_spanish[month.month]  # Usar nombres en español
             
             # Obtener fechas de esta actividad en este mes
             month_dates = activity_dates[activity_dates['month'] == month]
@@ -69,7 +75,7 @@ def create_full_year_calendar_table(dates_df, activities):
     df = pd.DataFrame(table_data)
     
     # Reordenar columnas: Actividad + meses en orden
-    month_columns = [month.strftime('%b') for month in months]
+    month_columns = [month_names_spanish[month.month] for month in months]
     column_order = ["Actividad"] + month_columns
     df = df.reindex(columns=column_order, fill_value="")
     
