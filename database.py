@@ -1,7 +1,7 @@
 import sqlite3
 import pandas as pd
 import json
-from datetime import datetime
+from datetime import datetime, date
 
 def init_database():
     """Inicializa la base de datos y crea las tablas necesarias"""
@@ -517,7 +517,13 @@ def save_calculated_dates(client_id, activity_name, dates_list):
         # Insertar nuevas fechas en posiciones secuenciales (1, 2, 3, 4)
         for position, date in enumerate(dates_list[:4], 1):
             if date:
-                date_str = date.strftime('%Y-%m-%d') if isinstance(date, datetime.date) else str(date)
+                # Manejo más robusto de diferentes tipos de fecha
+                if isinstance(date, (datetime, date)):
+                    date_str = date.strftime('%Y-%m-%d')
+                elif hasattr(date, 'strftime'):
+                    date_str = date.strftime('%Y-%m-%d')
+                else:
+                    date_str = str(date)
                 
                 cursor.execute('''
                     INSERT INTO calculated_dates (client_id, activity_name, date_position, date)
