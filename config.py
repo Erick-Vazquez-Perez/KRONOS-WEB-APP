@@ -71,9 +71,13 @@ class DatabaseConfig:
         if os.getenv('KRONOS_ENV'):
             env = os.getenv('KRONOS_ENV').lower()
             if env in ['development', 'production', 'testing']:
-                # Si KRONOS_ENV dice development pero estamos en servidor, forzar producción
-                if env == 'development' and not self._is_local_environment():
-                    print("[KRONOS] KRONOS_ENV=development ignorado en servidor, forzando producción")
+                # Si KRONOS_ENV dice development y estamos en localhost, respetarlo
+                if env == 'development' and self._is_localhost():
+                    print("[KRONOS] KRONOS_ENV=development respetado en localhost")
+                    return env
+                # Si KRONOS_ENV dice development pero estamos en servidor remoto, forzar producción
+                elif env == 'development' and not self._is_localhost():
+                    print("[KRONOS] KRONOS_ENV=development ignorado en servidor remoto, forzando producción")
                     return 'production'
                 return env
         
@@ -107,9 +111,9 @@ class DatabaseConfig:
         except:
             pass
         
-        # 5. Si no estamos en entorno local, SIEMPRE es producción
-        if not self._is_local_environment():
-            print("[KRONOS] No es entorno local, forzando producción")
+        # 5. Si no estamos en entorno local, SIEMPRE es producción (excepto si es localhost)
+        if not self._is_local_environment() and not self._is_localhost():
+            print("[KRONOS] No es entorno local ni localhost, forzando producción")
             return 'production'
         
         # 6. Verificar si existe un archivo .env (solo como última opción)
@@ -126,6 +130,45 @@ class DatabaseConfig:
         # 7. FALLBACK FINAL: Si llegamos aquí y no es local, ES PRODUCCIÓN
         print("[KRONOS] Fallback: Asumiendo producción por exclusión")
         return 'production'
+    
+    def _is_localhost(self):
+        """Detecta si estamos ejecutando específicamente en localhost"""
+        try:
+            import socket
+            
+            # Verificar si estamos ejecutando en localhost/127.0.0.1
+            try:
+                # Intentar conectar a localhost para verificar que estamos ejecutando localmente
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(('127.0.0.1', 8501))  # Puerto típico de Streamlit
+                sock.close()
+                if result == 0:
+                    print("[KRONOS] Localhost detectado - Streamlit ejecutándose en 127.0.0.1:8501")
+                    return True
+            except:
+                pass
+            
+            # Verificar hostname localhost
+            hostname = socket.gethostname().lower()
+            if 'localhost' in hostname or hostname == 'localhost':
+                print(f"[KRONOS] Localhost detectado por hostname: {hostname}")
+                return True
+            
+            # Verificar IP local
+            try:
+                ip = socket.gethostbyname(hostname)
+                if ip.startswith('127.'):
+                    print(f"[KRONOS] Localhost detectado por IP: {ip}")
+                    return True
+            except:
+                pass
+            
+            return False
+            
+        except Exception as e:
+            print(f"[KRONOS] Error detectando localhost: {e}")
+            return False
     
     def _is_local_environment(self):
         """Detecta si estamos ejecutando en un entorno local"""
@@ -261,9 +304,9 @@ class DatabaseConfig:
                 print(f"[KRONOS] Variable Streamlit Cloud detectada: {var} - Panel bloqueado")
                 return  # SALIR INMEDIATAMENTE
         
-        # CONDICIÓN ESTRICTA: Solo mostrar en desarrollo Y entorno local Y no Streamlit Cloud
-        if self.is_development() and self._is_local_environment():
-            print("[KRONOS] Mostrando panel de desarrollo (entorno local confirmado)")
+        # CONDICIÓN ESTRICTA: Solo mostrar en desarrollo Y (entorno local O localhost)
+        if self.is_development() and (self._is_local_environment() or self._is_localhost()):
+            print("[KRONOS] Mostrando panel de desarrollo (entorno local o localhost confirmado)")
             info = self.get_config_info()
             
             with st.expander("🔧 Información del Entorno (Solo Desarrollo Local)", expanded=False):
@@ -305,7 +348,7 @@ class DatabaseConfig:
                         st.rerun()
         else:
             # Log para debugging (no visible al usuario)
-            print(f"[KRONOS] Panel bloqueado - Development: {self.is_development()}, Local: {self._is_local_environment()}")
+            print(f"[KRONOS] Panel bloqueado - Development: {self.is_development()}, Local: {self._is_local_environment()}, Localhost: {self._is_localhost()}")
 
 # Instancia global de configuración
 db_config = DatabaseConfig()
