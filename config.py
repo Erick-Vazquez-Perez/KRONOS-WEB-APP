@@ -30,42 +30,98 @@ class DatabaseConfig:
     def _detect_environment(self):
         """Detecta automáticamente el entorno actual"""
         
-        # 1. Verificar variable de entorno específica
+        # 1. Verificar variable de entorno específica (mayor prioridad)
         if os.getenv('KRONOS_ENV'):
-            return os.getenv('KRONOS_ENV').lower()
+            env = os.getenv('KRONOS_ENV').lower()
+            if env in ['development', 'production', 'testing']:
+                return env
         
-        # 2. Verificar si estamos en Streamlit Cloud (producción)
-        if os.getenv('STREAMLIT_SHARING_MODE') or os.getenv('STREAMLIT_CLOUD'):
-            return 'production'
-        
-        # 3. Verificar otros indicadores de producción
+        # 2. DETECCIÓN ROBUSTA DE PRODUCCIÓN (nuevas variables)
         production_indicators = [
-            'DYNO',  # Heroku
-            'RENDER',  # Render
-            'VERCEL',  # Vercel
-            'RAILWAY_ENVIRONMENT',  # Railway
+            'STREAMLIT_SHARING_MODE',  # Streamlit Cloud
+            'STREAMLIT_CLOUD',         # Streamlit Cloud nueva versión
+            'STREAMLIT_SERVER_PORT',   # Streamlit en servidor
+            'DYNO',                    # Heroku
+            'RENDER',                  # Render
+            'VERCEL',                  # Vercel
+            'RAILWAY_ENVIRONMENT',     # Railway
+            'NETLIFY',                 # Netlify
+            'CF_PAGES',                # Cloudflare Pages
+            'GITHUB_ACTIONS',          # GitHub Actions
+            'CI',                      # Continuous Integration
+            'DEPLOYMENT_ENV'           # Variable genérica de despliegue
         ]
         
         for indicator in production_indicators:
             if os.getenv(indicator):
+                print(f"[KRONOS] Producción detectada por: {indicator}={os.getenv(indicator)}")
                 return 'production'
         
-        # 4. Verificar si existe un archivo .env o estamos en desarrollo local
-        current_dir = Path(__file__).parent
-        if (current_dir / '.env').exists() or (current_dir / 'requirements-dev.txt').exists():
-            return 'development'
-        
-        # 5. Verificar si estamos ejecutando desde localhost
+        # 3. Verificar hostname de servidor (nuevo)
         try:
             import socket
-            hostname = socket.gethostname()
-            if 'localhost' in hostname.lower() or hostname.startswith('DESKTOP-') or hostname.startswith('LAPTOP-'):
-                return 'development'
+            hostname = socket.gethostname().lower()
+            
+            # Hostnames típicos de servidores en la nube
+            cloud_patterns = [
+                'streamlit', 'heroku', 'render', 'vercel', 'railway',
+                'netlify', 'aws', 'gcp', 'azure', 'digitalocean',
+                'server', 'prod', 'production'
+            ]
+            
+            for pattern in cloud_patterns:
+                if pattern in hostname:
+                    print(f"[KRONOS] Producción detectada por hostname: {hostname}")
+                    return 'production'
         except:
             pass
         
-        # 6. Por defecto, usar development en local
-        return 'development'
+        # 4. Verificar si existe un archivo .env o estamos en desarrollo local
+        current_dir = Path(__file__).parent
+        if (current_dir / '.env').exists():
+            # Si existe .env, leer la configuración
+            try:
+                with open(current_dir / '.env', 'r') as f:
+                    content = f.read()
+                    if 'KRONOS_ENV=development' in content:
+                        return 'development'
+                    elif 'KRONOS_ENV=production' in content:
+                        # Solo usar si estamos realmente en local
+                        if self._is_local_environment():
+                            return 'production'
+                        else:
+                            print("[KRONOS] Ignorando .env en servidor, usando detección automática")
+                            return 'production'
+            except:
+                pass
+        
+        # 5. Verificar si estamos ejecutando desde localhost
+        if self._is_local_environment():
+            return 'development'
+        
+        # 6. Por defecto en servidores, usar producción
+        print("[KRONOS] Entorno no detectado claramente, asumiendo producción en servidor")
+        return 'production'
+    
+    def _is_local_environment(self):
+        """Detecta si estamos ejecutando en un entorno local"""
+        try:
+            import socket
+            hostname = socket.gethostname().lower()
+            
+            # Indicadores de entorno local
+            local_indicators = [
+                'localhost' in hostname,
+                hostname.startswith('desktop-'),
+                hostname.startswith('laptop-'),
+                hostname.startswith('pc-'),
+                'local' in hostname,
+                '127.0.0.1' in hostname
+            ]
+            
+            return any(local_indicators)
+        except:
+            return False
     
     def _get_db_config(self):
         """Obtiene la configuración de base de datos según el entorno"""
@@ -120,11 +176,13 @@ class DatabaseConfig:
         }
     
     def show_environment_info(self):
-        """Muestra información del entorno en Streamlit (solo en desarrollo)"""
-        if self.is_development():
+        """Muestra información del entorno en Streamlit (SOLO en desarrollo local)"""
+        
+        # CONDICIÓN ESTRICTA: Solo mostrar en desarrollo Y entorno local
+        if self.is_development() and self._is_local_environment():
             info = self.get_config_info()
             
-            with st.expander("🔧 Información del Entorno (Solo Desarrollo)", expanded=False):
+            with st.expander("🔧 Información del Entorno (Solo Desarrollo Local)", expanded=False):
                 st.json(info)
                 
                 # Mostrar variables de entorno relevantes
@@ -143,7 +201,8 @@ class DatabaseConfig:
                     st.write("**Variables de entorno detectadas:**")
                     st.json(env_vars)
                 
-                # Botón para cambiar entorno manualmente (solo en desarrollo)
+                # Botones para cambiar entorno (solo en desarrollo local)
+                st.warning("⚠️ Estos botones solo funcionan en desarrollo local")
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
@@ -160,6 +219,11 @@ class DatabaseConfig:
                     if st.button("🧪 Usar TEST", help="Cambiar a base de datos de pruebas"):
                         os.environ['KRONOS_ENV'] = 'testing'
                         st.rerun()
+        
+        # En producción o servidor, no mostrar nada (silencioso)
+        elif not self._is_local_environment():
+            # Opcional: Log interno para debugging del servidor (no visible al usuario)
+            pass
 
 # Instancia global de configuración
 db_config = DatabaseConfig()

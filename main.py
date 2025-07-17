@@ -8,7 +8,7 @@ from ui_components import (
 )
 
 # Configuración de la página
-st.set_page_config(page_title="Agenda de Calendarios de Clientes", layout="wide")
+st.set_page_config(page_title="Agenda Kronos", layout="wide")
 
 def main():
     """Función principal de la aplicación"""
