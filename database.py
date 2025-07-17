@@ -2,10 +2,23 @@ import sqlite3
 import pandas as pd
 import json
 from datetime import datetime, date
+from config import get_database_path, get_db_config
+
+def get_db_connection():
+    """Obtiene una conexión a la base de datos según el entorno"""
+    db_path = get_database_path()
+    return sqlite3.connect(db_path)
 
 def init_database():
     """Inicializa la base de datos y crea las tablas necesarias"""
-    conn = sqlite3.connect('client_calendar.db')
+    db_path = get_database_path()
+    config = get_db_config()
+    
+    print(f"[KRONOS] Inicializando base de datos: {db_path}")
+    print(f"[KRONOS] Entorno: {config.get_environment()}")
+    print(f"[KRONOS] Descripción: {config.db_config['description']}")
+    
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Tabla de clientes
@@ -125,7 +138,7 @@ def init_database():
 
 def get_clients():
     """Obtiene todos los clientes"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     try:
         clients = pd.read_sql_query("SELECT * FROM clients", conn)
     except Exception as e:
@@ -136,7 +149,7 @@ def get_clients():
 
 def get_client_by_id(client_id):
     """Obtiene un cliente por su ID - Versión mejorada"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     try:
         # Usar fetchone directamente en lugar de pandas para mayor control
         cursor = conn.cursor()
@@ -164,7 +177,7 @@ def get_client_by_id(client_id):
 
 def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
     """Agrega un nuevo cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -187,7 +200,7 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
 
 def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
     """Actualiza la información de un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -241,11 +254,62 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
     finally:
         conn.close()
 
+def delete_client(client_id):
+    """Elimina un cliente y todos sus datos relacionados"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar que el cliente existe
+        cursor.execute("SELECT id, name FROM clients WHERE id = ?", (client_id,))
+        existing_client = cursor.fetchone()
+        
+        if not existing_client:
+            print(f"Error: Cliente con ID {client_id} no encontrado")
+            return False
+        
+        client_name = existing_client[1]
+        print(f"Eliminando cliente: ID {client_id}, Nombre: {client_name}")
+        
+        # Eliminar en orden para mantener integridad referencial
+        # 1. Eliminar fechas calculadas
+        cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
+        deleted_dates = cursor.rowcount
+        print(f"  Fechas calculadas eliminadas: {deleted_dates}")
+        
+        # 2. Eliminar actividades del cliente
+        cursor.execute("DELETE FROM client_activities WHERE client_id = ?", (client_id,))
+        deleted_activities = cursor.rowcount
+        print(f"  Actividades eliminadas: {deleted_activities}")
+        
+        # 3. Eliminar el cliente
+        cursor.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+        deleted_client = cursor.rowcount
+        
+        if deleted_client == 0:
+            print(f"Error: No se pudo eliminar el cliente ID {client_id}")
+            conn.rollback()
+            return False
+        
+        conn.commit()
+        print(f"✅ Cliente '{client_name}' (ID {client_id}) eliminado exitosamente")
+        print(f"  Total eliminado: 1 cliente, {deleted_activities} actividades, {deleted_dates} fechas")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error eliminando cliente ID {client_id}: {e}")
+        import traceback
+        print(f"Traceback completo: {traceback.format_exc()}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
 # === FUNCIONES DE FRECUENCIAS ===
 
 def get_frequency_templates():
     """Obtiene todas las plantillas de frecuencias"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     try:
         templates = pd.read_sql_query("SELECT * FROM frequency_templates", conn)
     except Exception as e:
@@ -256,7 +320,7 @@ def get_frequency_templates():
 
 def add_frequency_template(name, frequency_type, frequency_config, description):
     """Agrega una nueva plantilla de frecuencia"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
@@ -274,7 +338,7 @@ def add_frequency_template(name, frequency_type, frequency_config, description):
 
 def update_frequency_template(template_id, name, frequency_type, frequency_config, description):
     """Actualiza una plantilla de frecuencia existente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -296,7 +360,7 @@ def update_frequency_template(template_id, name, frequency_type, frequency_confi
 
 def delete_frequency_template(template_id):
     """Elimina una plantilla de frecuencia"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -327,7 +391,7 @@ def delete_frequency_template(template_id):
 
 def get_frequency_usage_count(template_id):
     """Obtiene el número de actividades que usan una frecuencia específica"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -348,7 +412,7 @@ def get_frequency_usage_count(template_id):
 
 def get_client_activities(client_id):
     """Obtiene las actividades de un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     try:
         activities = pd.read_sql_query('''
             SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config
@@ -364,7 +428,7 @@ def get_client_activities(client_id):
 
 def create_default_activities(client_id):
     """Crea las actividades predeterminadas para un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Verificar que existan las frecuencias predeterminadas
@@ -403,7 +467,7 @@ def create_default_activities(client_id):
 
 def update_client_activity_frequency(client_id, activity_name, frequency_template_id):
     """Actualiza la frecuencia de una actividad específica"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -425,7 +489,7 @@ def update_client_activity_frequency(client_id, activity_name, frequency_templat
 
 def add_client_activity(client_id, activity_name, frequency_template_id):
     """Agrega una nueva actividad a un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -446,7 +510,7 @@ def add_client_activity(client_id, activity_name, frequency_template_id):
 
 def delete_client_activity(client_id, activity_name):
     """Elimina una actividad de un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -476,7 +540,7 @@ def delete_client_activity(client_id, activity_name):
 
 def get_calculated_dates(client_id):
     """Obtiene las fechas calculadas para un cliente"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     try:
         dates = pd.read_sql_query(
             "SELECT * FROM calculated_dates WHERE client_id = ? ORDER BY activity_name, date_position", 
@@ -486,7 +550,7 @@ def get_calculated_dates(client_id):
         conn.close()
         print(f"Error en get_calculated_dates: {e}")
         init_database()
-        conn = sqlite3.connect('client_calendar.db')
+        conn = get_db_connection()
         try:
             dates = pd.read_sql_query(
                 "SELECT * FROM calculated_dates WHERE client_id = ? ORDER BY activity_name, date_position", 
@@ -504,7 +568,7 @@ def save_calculated_dates(client_id, activity_name, dates_list):
         print(f"No hay fechas para guardar para actividad {activity_name}")
         return
         
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -541,7 +605,7 @@ def save_calculated_dates(client_id, activity_name, dates_list):
 
 def update_calculated_date(client_id, activity_name, date_position, new_date):
     """Actualiza una fecha específica"""
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE calculated_dates 

@@ -1,5 +1,6 @@
 import streamlit as st
 from database import init_database
+from config import get_db_config
 from ui_components import (
     show_clients_gallery, 
     show_add_client, 
@@ -7,11 +8,23 @@ from ui_components import (
 )
 
 # Configuración de la página
-st.set_page_config(page_title="Agenda de Calendarios de Clientes", layout="wide")
+st.set_page_config(page_title="Agenda Kronos", layout="wide")
 
 def main():
     """Función principal de la aplicación"""
-    st.title("Kronos Web App")
+    
+    # Obtener configuración de entorno
+    config = get_db_config()
+    
+    # Mostrar título con información del entorno
+    if config.is_development():
+        st.title("Kronos Web App 🔧 DEV")
+        st.caption(f"🔧 Entorno de Desarrollo - BD: {config.get_database_path()}")
+    else:
+        st.title("Kronos Web App")
+    
+    # Mostrar información del entorno en desarrollo
+    config.show_environment_info()
     
     # Inicializar base de datos
     init_database()
