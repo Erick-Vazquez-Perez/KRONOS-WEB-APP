@@ -187,6 +187,79 @@ def show_clients_gallery():
     else:
         show_clients_gallery_view(clients_to_show)
 
+def get_client_current_month_data(client_id):
+    """Obtiene los datos del mes actual para un cliente específico (vista compacta)"""
+    dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        return None
+    
+    # Obtener mes actual
+    current_month = datetime.now().month
+    
+    # Filtrar fechas del mes actual
+    month_dates = []
+    for _, row in dates_df.iterrows():
+        try:
+            date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
+            if date_obj.month == current_month:
+                # Mapear meses al español para formato abreviado
+                months_spanish = {
+                    1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+                    7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+                }
+                month_abbr = months_spanish[date_obj.month]
+                formatted_date = f"{date_obj.day:02d}-{month_abbr}"
+                
+                month_dates.append({
+                    'activity_name': row['activity_name'],
+                    'date': date_obj,
+                    'date_position': row['date_position'],
+                    'formatted_date': formatted_date
+                })
+        except:
+            continue
+    
+    if not month_dates:
+        return None
+    
+    # Crear tabla agrupada por actividad - solo fechas del mes actual
+    table_data = {}
+    
+    # Agrupar fechas por actividad y posición, solo para este mes
+    for date_info in month_dates:
+        activity = date_info['activity_name']
+        position = date_info['date_position']
+        
+        if activity not in table_data:
+            table_data[activity] = {}
+        
+        table_data[activity][position] = date_info['formatted_date']
+    
+    # Crear DataFrame para la tabla
+    table_rows = []
+    
+    # Determinar cuántas fechas tiene cada actividad en este mes específico
+    for activity in sorted(table_data.keys()):
+        row = {'Actividad': activity}
+        activity_positions = sorted(table_data[activity].keys())
+        
+        # Agregar columnas para cada posición que existe en este mes
+        for i, pos in enumerate(activity_positions, 1):
+            fecha_col = f'Fecha {i}'
+            row[fecha_col] = table_data[activity][pos]
+        
+        table_rows.append(row)
+    
+    if table_rows:
+        # Crear DataFrame con índice limpio y resetear índice para evitar filas vacías
+        df = pd.DataFrame(table_rows)
+        # Filtrar filas que solo tengan 'Actividad' y valores nulos en el resto
+        df = df.dropna(subset=[col for col in df.columns if col != 'Actividad'], how='all')
+        return df.reset_index(drop=True) if not df.empty else None
+    else:
+        return None
+
 def show_clients_gallery_view(clients_to_show):
     """Muestra los clientes en vista de galería (tarjetas)"""
     # Mostrar galería de clientes
@@ -204,18 +277,37 @@ def show_clients_gallery_view(clients_to_show):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Mostrar mini tabla de calendario
+                # Mostrar vista del mes actual
                 try:
-                    calendar_df = create_client_calendar_table(client['id'], show_full_year=False)
-                    if not calendar_df.empty:
+                    current_month_df = get_client_current_month_data(client['id'])
+                    if current_month_df is not None and not current_month_df.empty:
+                        # Obtener nombre del mes actual
+                        months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+                        current_month_name = months[datetime.now().month - 1]
+                        
+                        st.markdown(f"{current_month_name}")
+                        # Calcular altura dinámica basada en número de filas
+                        num_rows = len(current_month_df)
+                        dynamic_height = min(max(num_rows * 35 + 60, 150), 400)  # Altura entre 150 y 400px
+                        
                         st.dataframe(
-                            calendar_df,
+                            current_month_df,
                             use_container_width=True,
                             hide_index=True,
-                            height=150
+                            height=dynamic_height,
+                            column_config={
+                                'Actividad': st.column_config.TextColumn(
+                                    'Actividad',
+                                    width='medium'
+                                )
+                            }
                         )
                     else:
-                        st.write("📅 Sin calendario configurado")
+                        current_month_name = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                                            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][datetime.now().month - 1]
+                        st.markdown(f"**📅 {current_month_name}**")
+                        st.write("Sin actividades este mes")
                 except Exception as e:
                     st.write("📅 Sin calendario configurado")
                 
