@@ -5,10 +5,13 @@
 *.sqlite3
 
 # Base de datos específicas de Kronos
-client_calendar.db
+# client_calendar.db - INCLUIDO para producción en Streamlit Cloud
 client_calendar_dev.db
 client_calendar_test.db
 client_calendar_*.db
+
+# Excluir client_calendar.db solo en desarrollo local si existe .env
+# En producción (Streamlit Cloud) este archivo DEBE estar versionado
 
 # Backups de bases de datos
 *.backup_*

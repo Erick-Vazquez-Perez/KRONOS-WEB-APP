@@ -247,7 +247,25 @@ class DatabaseConfig:
     
     def get_database_path(self):
         """Retorna la ruta completa de la base de datos"""
-        return self.db_config['database_name']
+        db_name = self.db_config['database_name']
+        
+        # En producción (Streamlit Cloud), usar ruta absoluta basada en el directorio del proyecto
+        if self.is_production():
+            # Obtener el directorio donde está este archivo config.py
+            project_dir = Path(__file__).parent.absolute()
+            db_path = project_dir / db_name
+            print(f"[KRONOS] Ruta de BD en producción: {db_path}")
+            return str(db_path)
+        else:
+            # En desarrollo, usar ruta relativa como antes
+            print(f"[KRONOS] Ruta de BD en desarrollo: {db_name}")
+            return db_name
+    
+    def get_db_connection(self):
+        """Obtiene una conexión a la base de datos según el entorno"""
+        import sqlite3
+        db_path = self.get_database_path()
+        return sqlite3.connect(db_path)
     
     def get_environment(self):
         """Retorna el entorno actual"""
