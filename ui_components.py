@@ -2,17 +2,21 @@ import streamlit as st
 import json
 import sqlite3
 import pandas as pd
+import streamlit as st
+import pandas as pd
 from datetime import datetime, timedelta
 from database import (
-    get_clients, get_client_by_id, add_client, update_client,
+    get_clients, get_client_by_id, add_client, update_client, delete_client,
     get_frequency_templates, add_frequency_template, update_frequency_template,
     delete_frequency_template, get_frequency_usage_count,
     get_client_activities, update_client_activity_frequency,
     add_client_activity, delete_client_activity,
-    get_calculated_dates, save_calculated_dates, update_calculated_date
+    get_calculated_dates, save_calculated_dates, update_calculated_date,
+    get_db_connection
 )
 from date_calculator import recalculate_client_dates
 from calendar_utils import create_client_calendar_table, format_frequency_description
+import sqlite3
 
 # ========== FUNCIONES DE GALERÍA Y NAVEGACIÓN ==========
 
@@ -392,6 +396,9 @@ def show_client_detail():
     
     client_id = st.session_state.selected_client
     
+    # NO limpiar estados de confirmación aquí, solo claves de botones duplicadas
+    # (La limpieza que causaba el problema se ha eliminado)
+    
     # Intentar obtener el cliente
     try:
         client = get_client_by_id(client_id)
@@ -574,7 +581,7 @@ def show_client_detail():
     st.divider()
     st.subheader("⚡ Acciones Rápidas")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         if st.button("📤 Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
@@ -592,7 +599,7 @@ def show_client_detail():
         if st.button("🗑️ Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
             if st.session_state.get(f'confirm_clear_{client_id}', False):
                 # Ejecutar limpieza
-                conn = sqlite3.connect('client_calendar.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
                 conn.commit()
@@ -604,6 +611,50 @@ def show_client_detail():
             else:
                 st.session_state[f'confirm_clear_{client_id}'] = True
                 st.warning("⚠️ Presiona nuevamente para confirmar la eliminación de todas las fechas")
+                st.rerun()
+    
+    with col5:
+        # Debug: Mostrar estado actual de confirmación
+        confirm_key = f'confirm_delete_{client_id}'
+        is_confirmed = st.session_state.get(confirm_key, False)
+        
+        # Cambiar el estilo del botón si está en modo confirmación
+        button_type = "primary" if is_confirmed else "secondary"
+        button_text = "⚠️ CONFIRMAR ELIMINACIÓN" if is_confirmed else "❌ Eliminar Cliente"
+        
+        if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
+            if is_confirmed:
+                # Segunda presión: ejecutar eliminación
+                st.info("Eliminando cliente...")
+                try:
+                    if delete_client(client_id):
+                        st.success("✅ Cliente eliminado exitosamente")
+                        # Limpiar estados específicos del cliente
+                        keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
+                        for key in keys_to_delete:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
+                        # Regresar a la galería
+                        st.session_state.show_client_detail = False
+                        st.session_state.selected_client = None
+                        st.rerun()
+                    else:
+                        st.error("❌ Error al eliminar el cliente")
+                        st.session_state[confirm_key] = False
+                except Exception as e:
+                    st.error(f"❌ Error inesperado: {str(e)}")
+                    st.session_state[confirm_key] = False
+            else:
+                # Primera presión: pedir confirmación
+                st.session_state[confirm_key] = True
+                st.warning("⚠️ ¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
+                st.rerun()
+        
+        # Mostrar botón de cancelar si está en modo confirmación
+        if is_confirmed:
+            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
+                st.session_state[confirm_key] = False
                 st.rerun()
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
@@ -1962,6 +2013,10 @@ def show_add_client():
                         
                         st.success(f"✅ Cliente '{name}' creado exitosamente con {len(activities_config)} actividades configuradas")
                         
+                        # Guardar el ID del cliente recién creado en session_state
+                        st.session_state.new_client_created = client_id
+                        st.session_state.new_client_name = name
+                        
                         # Mostrar las fechas calculadas
                         st.subheader("📅 Calendario Generado")
                         calendar_df = create_client_calendar_table(client_id, show_full_year=False)
@@ -1980,19 +2035,44 @@ def show_add_client():
                                 pass
                         else:
                             st.warning("No se pudieron calcular las fechas. Puedes configurarlas desde el detalle del cliente.")
-                        
-                        st.balloons()
-                        
-                        # Botón para ir al detalle del cliente
-                        if st.button("📋 Ver Detalle del Cliente"):
-                            st.session_state.selected_client = client_id
-                            st.session_state.show_client_detail = True
-                            st.rerun()
                             
                     else:
                         st.error("❌ Error al crear el cliente. Revisa los logs.")
             else:
                 st.error("❌ El nombre del cliente es obligatorio")
+    
+    # Mostrar botón para ver detalle solo si se creó un cliente recientemente
+    if st.session_state.get('new_client_created'):
+        st.divider()
+        st.subheader("🎉 ¡Cliente Creado Exitosamente!")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button(f"📋 Ver Detalle de '{st.session_state.get('new_client_name', 'Cliente')}'", 
+                        key="view_new_client_detail", 
+                        use_container_width=True,
+                        type="primary"):
+                st.session_state.selected_client = st.session_state.new_client_created
+                st.session_state.show_client_detail = True
+                # Limpiar el estado de cliente recién creado
+                del st.session_state['new_client_created']
+                del st.session_state['new_client_name']
+                st.rerun()
+        
+        # Botón para crear otro cliente
+        with col1:
+            if st.button("➕ Crear Otro", key="create_another_client"):
+                # Limpiar el estado de cliente recién creado
+                del st.session_state['new_client_created']
+                del st.session_state['new_client_name']
+                st.rerun()
+        
+        with col3:
+            if st.button("📊 Ver Galería", key="view_gallery_from_add"):
+                # Limpiar el estado de cliente recién creado
+                del st.session_state['new_client_created']
+                del st.session_state['new_client_name']
+                st.rerun()
 
 # ========== FUNCIONES DE GESTIÓN DE FRECUENCIAS ==========
 

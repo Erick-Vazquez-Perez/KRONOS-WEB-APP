@@ -2,7 +2,7 @@ import json
 import calendar
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from database import get_client_activities, save_calculated_dates, create_default_activities
+from database import get_client_activities, save_calculated_dates, create_default_activities, get_db_connection
 
 def get_nth_weekday_of_month(year, month, weekday, n):
     """Obtiene el n-ésimo día de la semana de un mes"""
@@ -165,7 +165,7 @@ def save_calculated_dates_batch(client_id, activity_name, dates_batch, start_pos
     if not dates_batch:
         return
         
-    conn = sqlite3.connect('client_calendar.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:

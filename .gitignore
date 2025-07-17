@@ -1,1 +1,60 @@
-/__pycache__
+# Bases de datos
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Base de datos específicas de Kronos
+client_calendar.db
+client_calendar_dev.db
+client_calendar_test.db
+client_calendar_*.db
+
+# Backups de bases de datos
+*.backup_*
+*.BACKUP_*
+
+# Variables de entorno
+.env
+.env.local
+.env.production
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Archivos temporales
+*.tmp
+*.temp
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Scripts temporales
+update_db_connections.py
+quick_migrate.py
+check_databases.py
+quick_test_*.py
+test_complete_*.py
+
+# Archivos de desarrollo
+requirements-dev.txt
+test_*.py
+debug_*.py
+temp_*.py
+*_temp.py
