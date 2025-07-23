@@ -71,12 +71,12 @@ class DatabaseConfig:
         if os.getenv('KRONOS_ENV'):
             env = os.getenv('KRONOS_ENV').lower()
             if env in ['development', 'production', 'testing']:
-                # Si KRONOS_ENV dice development y estamos en localhost, respetarlo
-                if env == 'development' and self._is_localhost():
-                    print("[KRONOS] KRONOS_ENV=development respetado en localhost")
+                # Si KRONOS_ENV dice development y tenemos LOCAL_DEVELOPMENT=true, respetarlo
+                if env == 'development' and (self._is_localhost() or os.getenv('LOCAL_DEVELOPMENT') == 'true'):
+                    print("[KRONOS] KRONOS_ENV=development respetado (localhost o LOCAL_DEVELOPMENT=true)")
                     return env
                 # Si KRONOS_ENV dice development pero estamos en servidor remoto, forzar producción
-                elif env == 'development' and not self._is_localhost():
+                elif env == 'development' and not self._is_localhost() and not os.getenv('LOCAL_DEVELOPMENT'):
                     print("[KRONOS] KRONOS_ENV=development ignorado en servidor remoto, forzando producción")
                     return 'production'
                 return env
@@ -111,8 +111,8 @@ class DatabaseConfig:
         except:
             pass
         
-        # 5. Si no estamos en entorno local, SIEMPRE es producción (excepto si es localhost)
-        if not self._is_local_environment() and not self._is_localhost():
+        # 5. Si no estamos en entorno local, SIEMPRE es producción (excepto si es localhost o LOCAL_DEVELOPMENT)
+        if not self._is_local_environment() and not self._is_localhost() and not os.getenv('LOCAL_DEVELOPMENT'):
             print("[KRONOS] No es entorno local ni localhost, forzando producción")
             return 'production'
         
@@ -127,7 +127,11 @@ class DatabaseConfig:
             except:
                 pass
         
-        # 7. FALLBACK FINAL: Si llegamos aquí y no es local, ES PRODUCCIÓN
+        # 7. FALLBACK FINAL: Si llegamos aquí y no es local (y no hay LOCAL_DEVELOPMENT), ES PRODUCCIÓN
+        if os.getenv('LOCAL_DEVELOPMENT') == 'true':
+            print("[KRONOS] LOCAL_DEVELOPMENT=true detectado, forzando desarrollo")
+            return 'development'
+        
         print("[KRONOS] Fallback: Asumiendo producción por exclusión")
         return 'production'
     
@@ -194,22 +198,27 @@ class DatabaseConfig:
             except:
                 pass
             
-            # Verificar rutas que indican entorno no local
+            # Verificar rutas que indican entorno no local (solo si no hay LOCAL_DEVELOPMENT)
             current_path = str(Path(__file__).parent).lower()
-            non_local_paths = [
-                'onedrive',  # Tu caso específico
-                'sharepoint',
-                'dropbox',
-                'googledrive',
-                '/tmp/',
-                '/var/',
-                'c:\\windows\\temp'
-            ]
             
-            for path in non_local_paths:
-                if path in current_path:
-                    print(f"[KRONOS] Entorno no local detectado por ruta: {current_path}")
-                    return False
+            # Si LOCAL_DEVELOPMENT está activado, no rechazar por ruta
+            if os.getenv('LOCAL_DEVELOPMENT') == 'true':
+                print(f"[KRONOS] LOCAL_DEVELOPMENT=true - ignorando verificación de rutas no locales")
+            else:
+                non_local_paths = [
+                    'onedrive',  # Tu caso específico
+                    'sharepoint',
+                    'dropbox',
+                    'googledrive',
+                    '/tmp/',
+                    '/var/',
+                    'c:\\windows\\temp'
+                ]
+                
+                for path in non_local_paths:
+                    if path in current_path:
+                        print(f"[KRONOS] Entorno no local detectado por ruta: {current_path}")
+                        return False
             
             is_local = any(local_indicators)
             print(f"[KRONOS] Detección local: {is_local} (hostname: {hostname})")

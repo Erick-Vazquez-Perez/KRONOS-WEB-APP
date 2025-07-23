@@ -6,23 +6,34 @@ from ui_components import (
     show_add_client, 
     show_manage_frequencies
 )
+from werfen_styles import get_custom_css, get_werfen_header, get_werfen_footer
 
 # Configuración de la página
-st.set_page_config(page_title="Agenda Kronos", layout="wide")
+st.set_page_config(
+    page_title="KRONOS 2.0 - Werfen", 
+    page_icon="📅",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 def main():
     """Función principal de la aplicación"""
     
+    # Aplicar estilos CSS personalizados
+    st.markdown(get_custom_css(), unsafe_allow_html=True)
+    
+    # Mostrar header personalizado de Werfen
+    st.markdown(get_werfen_header(), unsafe_allow_html=True)
+    
     # Obtener configuración de entorno
     config = get_db_config()
     
-    # Mostrar título con información del entorno
-    if config.is_development():
-        st.title("Kronos Web App 🔧 DEV")
-        st.caption(f"🔧 Entorno de Desarrollo - BD: {config.get_database_path()}")
-    else:
-        st.title("Kronos Web App")
     # Mostrar información del entorno en desarrollo
+    if config.is_development():
+        st.info("🔧 **Entorno de Desarrollo** - Todas las funciones habilitadas")
+    elif is_read_only_mode():
+        st.warning("🔒 **Entorno de Producción** - Modo solo lectura")
+    
     config.show_environment_info()
     
     # Inicializar base de datos
@@ -72,3 +83,5 @@ def initialize_session_state():
 
 if __name__ == "__main__":
     main()
+    # Mostrar footer
+    st.markdown(get_werfen_footer(), unsafe_allow_html=True)
