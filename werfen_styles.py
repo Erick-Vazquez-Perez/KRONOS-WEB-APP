@@ -46,7 +46,7 @@ def get_custom_css():
     .stButton > button {
         background: linear-gradient(45deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
         color: white;
-        border: none;
+        border: 2px solid var(--werfen-blue);
         border-radius: 8px;
         padding: 0.6rem 1.2rem;
         font-weight: 600;
@@ -55,16 +55,41 @@ def get_custom_css():
     }
 
     .stButton > button:hover {
-        background: linear-gradient(45deg, var(--werfen-blue-dark) 0%, var(--werfen-blue) 100%);
+        background: white !important;
+        color: var(--werfen-blue) !important;
+        border: 2px solid var(--werfen-blue) !important;
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3);
+    }
+
+    .stButton > button:focus {
+        background: white !important;
+        color: var(--werfen-blue) !important;
+        border: 2px solid var(--werfen-blue) !important;
+        box-shadow: 0 0 0 2px rgba(6, 3, 141, 0.2);
+    }
+
+    .stButton > button:active {
+        background: var(--werfen-gray) !important;
+        color: var(--werfen-blue) !important;
+        border: 2px solid var(--werfen-blue) !important;
+        transform: translateY(0px);
+    }
+
+    .stButton > button:disabled {
+        background: var(--werfen-gray) !important;
+        color: #999 !important;
+        border: 2px solid #ddd !important;
+        cursor: not-allowed !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
 
     /* ========== BOTONES SECUNDARIOS (NARANJA) ========== */
     .orange-button {
         background: linear-gradient(45deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
         color: white !important;
-        border: none !important;
+        border: 2px solid var(--werfen-orange) !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
         transition: all 0.3s ease !important;
@@ -72,7 +97,9 @@ def get_custom_css():
     }
 
     .orange-button:hover {
-        background: linear-gradient(45deg, var(--werfen-orange-dark) 0%, var(--werfen-orange) 100%) !important;
+        background: white !important;
+        color: var(--werfen-orange) !important;
+        border: 2px solid var(--werfen-orange) !important;
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 8px rgba(232, 119, 33, 0.3) !important;
     }
@@ -170,6 +197,62 @@ def get_custom_css():
         opacity: 0.9;
     }
 
+    /* ========== ESTILIZADO DE MÉTRICAS NATIVAS DE STREAMLIT ========== */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, white 0%, var(--werfen-gray) 100%);
+        border: 2px solid var(--werfen-gray-dark);
+        border-left: 4px solid var(--werfen-blue);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(6, 3, 141, 0.15);
+        border-left-color: var(--werfen-orange);
+    }
+
+    div[data-testid="metric-container"] > div {
+        color: var(--werfen-blue) !important;
+    }
+
+    div[data-testid="metric-container"] > div > div[data-testid="metric-label"] {
+        font-size: 0.9rem !important;
+        color: #666 !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        margin-bottom: 0.5rem !important;
+    }
+
+    div[data-testid="metric-container"] > div > div[data-testid="metric-value"] {
+        font-size: 2.5rem !important;
+        font-weight: 700 !important;
+        color: var(--werfen-blue) !important;
+        line-height: 1 !important;
+    }
+
+    div[data-testid="metric-container"] > div > div[data-testid="metric-delta"] {
+        font-size: 0.8rem !important;
+        font-weight: 600 !important;
+        padding: 0.2rem 0.5rem !important;
+        border-radius: 20px !important;
+        margin-top: 0.5rem !important;
+    }
+
+    div[data-testid="metric-container"] > div > div[data-testid="metric-delta"][data-state="positive"] {
+        background-color: rgba(46, 125, 50, 0.1) !important;
+        color: #2e7d32 !important;
+    }
+
+    div[data-testid="metric-container"] > div > div[data-testid="metric-delta"][data-state="negative"] {
+        background-color: rgba(211, 47, 47, 0.1) !important;
+        color: #d32f2f !important;
+    }
+
     /* ========== MÉTRICAS WERFEN PERSONALIZADAS ========== */
     .werfen-metric {
         background: linear-gradient(135deg, white 0%, var(--werfen-gray) 100%);
@@ -251,7 +334,7 @@ def get_custom_css():
     }
 
     .werfen-button {
-        border: none;
+        border: 2px solid transparent;
         border-radius: 8px;
         padding: 0.8rem 1.5rem;
         font-weight: 600;
@@ -266,10 +349,13 @@ def get_custom_css():
     .werfen-button.primary {
         background: linear-gradient(45deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
         color: white;
+        border-color: var(--werfen-blue);
     }
 
     .werfen-button.primary:hover:not(.disabled) {
-        background: linear-gradient(45deg, var(--werfen-blue-dark) 0%, var(--werfen-blue) 100%);
+        background: white !important;
+        color: var(--werfen-blue) !important;
+        border-color: var(--werfen-blue) !important;
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3);
     }
@@ -277,10 +363,13 @@ def get_custom_css():
     .werfen-button.secondary {
         background: linear-gradient(45deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%);
         color: white;
+        border-color: var(--werfen-orange);
     }
 
     .werfen-button.secondary:hover:not(.disabled) {
-        background: linear-gradient(45deg, var(--werfen-orange-dark) 0%, var(--werfen-orange) 100%);
+        background: white !important;
+        color: var(--werfen-orange) !important;
+        border-color: var(--werfen-orange) !important;
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(232, 119, 33, 0.3);
     }
