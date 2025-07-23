@@ -590,88 +590,89 @@ def show_client_detail():
     
     st.divider()
     
-    # Sección de configuración de actividades y frecuencias
-    show_client_activities_section(client_id)
-    
-    # Sección de acciones rápidas
-    st.divider()
-    st.subheader("⚡ Acciones Rápidas")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        if st.button("📤 Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
-            st.info("Funcionalidad de exportar próximamente...")
-    
-    with col2:
-        if st.button("📧 Enviar por Email", use_container_width=True, key=f"email_{client_id}"):
-            st.info("Funcionalidad de email próximamente...")
-    
-    with col3:
-        if st.button("📋 Duplicar Configuración", use_container_width=True, key=f"duplicate_{client_id}"):
-            st.info("Funcionalidad de duplicar próximamente...")
-    
-    with col4:
-        if st.button("🗑️ Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
-            if st.session_state.get(f'confirm_clear_{client_id}', False):
-                # Ejecutar limpieza
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
-                conn.commit()
-                conn.close()
-                
-                st.success("✅ Fechas eliminadas exitosamente")
-                st.session_state[f'confirm_clear_{client_id}'] = False
-                st.rerun()
-            else:
-                st.session_state[f'confirm_clear_{client_id}'] = True
-                st.warning("⚠️ Presiona nuevamente para confirmar la eliminación de todas las fechas")
-                st.rerun()
-    
-    with col5:
-        # Debug: Mostrar estado actual de confirmación
-        confirm_key = f'confirm_delete_{client_id}'
-        is_confirmed = st.session_state.get(confirm_key, False)
+    # Sección de configuración de actividades y frecuencias (solo en desarrollo)
+    if not is_read_only_mode():
+        show_client_activities_section(client_id)
         
-        # Cambiar el estilo del botón si está en modo confirmación
-        button_type = "primary" if is_confirmed else "secondary"
-        button_text = "⚠️ CONFIRMAR ELIMINACIÓN" if is_confirmed else "❌ Eliminar Cliente"
+        # Sección de acciones rápidas
+        st.divider()
+        st.subheader("⚡ Acciones Rápidas")
         
-        if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
-            if is_confirmed:
-                # Segunda presión: ejecutar eliminación
-                st.info("Eliminando cliente...")
-                try:
-                    if delete_client(client_id):
-                        st.success("✅ Cliente eliminado exitosamente")
-                        # Limpiar estados específicos del cliente
-                        keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
-                        for key in keys_to_delete:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        # Regresar a la galería
-                        st.session_state.show_client_detail = False
-                        st.session_state.selected_client = None
-                        st.rerun()
-                    else:
-                        st.error("❌ Error al eliminar el cliente")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            if st.button("📤 Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
+                st.info("Funcionalidad de exportar próximamente...")
+        
+        with col2:
+            if st.button("📧 Enviar por Email", use_container_width=True, key=f"email_{client_id}"):
+                st.info("Funcionalidad de email próximamente...")
+        
+        with col3:
+            if st.button("📋 Duplicar Configuración", use_container_width=True, key=f"duplicate_{client_id}"):
+                st.info("Funcionalidad de duplicar próximamente...")
+        
+        with col4:
+            if st.button("🗑️ Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
+                if st.session_state.get(f'confirm_clear_{client_id}', False):
+                    # Ejecutar limpieza
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success("✅ Fechas eliminadas exitosamente")
+                    st.session_state[f'confirm_clear_{client_id}'] = False
+                    st.rerun()
+                else:
+                    st.session_state[f'confirm_clear_{client_id}'] = True
+                    st.warning("⚠️ Presiona nuevamente para confirmar la eliminación de todas las fechas")
+                    st.rerun()
+        
+        with col5:
+            # Debug: Mostrar estado actual de confirmación
+            confirm_key = f'confirm_delete_{client_id}'
+            is_confirmed = st.session_state.get(confirm_key, False)
+            
+            # Cambiar el estilo del botón si está en modo confirmación
+            button_type = "primary" if is_confirmed else "secondary"
+            button_text = "⚠️ CONFIRMAR ELIMINACIÓN" if is_confirmed else "❌ Eliminar Cliente"
+            
+            if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
+                if is_confirmed:
+                    # Segunda presión: ejecutar eliminación
+                    st.info("Eliminando cliente...")
+                    try:
+                        if delete_client(client_id):
+                            st.success("✅ Cliente eliminado exitosamente")
+                            # Limpiar estados específicos del cliente
+                            keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
+                            for key in keys_to_delete:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            
+                            # Regresar a la galería
+                            st.session_state.show_client_detail = False
+                            st.session_state.selected_client = None
+                            st.rerun()
+                        else:
+                            st.error("❌ Error al eliminar el cliente")
+                            st.session_state[confirm_key] = False
+                    except Exception as e:
+                        st.error(f"❌ Error inesperado: {str(e)}")
                         st.session_state[confirm_key] = False
-                except Exception as e:
-                    st.error(f"❌ Error inesperado: {str(e)}")
+                else:
+                    # Primera presión: pedir confirmación
+                    st.session_state[confirm_key] = True
+                    st.warning("⚠️ ¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
+                    st.rerun()
+            
+            # Mostrar botón de cancelar si está en modo confirmación
+            if is_confirmed:
+                if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
                     st.session_state[confirm_key] = False
-            else:
-                # Primera presión: pedir confirmación
-                st.session_state[confirm_key] = True
-                st.warning("⚠️ ¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
-                st.rerun()
-        
-        # Mostrar botón de cancelar si está en modo confirmación
-        if is_confirmed:
-            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
-                st.session_state[confirm_key] = False
-                st.rerun()
+                    st.rerun()
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
 
@@ -1481,6 +1482,10 @@ def show_changes_preview(original_df, edited_df):
 
 def show_client_activities_section(client_id):
     """Muestra la sección de configuración de actividades y frecuencias"""
+    # No mostrar nada en modo de solo lectura
+    if is_read_only_mode():
+        return
+    
     st.subheader("⚙️ Configurar Actividades y Frecuencias")
     
     activities = get_client_activities(client_id)
@@ -1574,8 +1579,7 @@ def show_client_activities_section(client_id):
                             st.rerun()
                     else:
                         st.error("El nombre de la actividad es obligatorio")
-        else:
-            st.info("🚫 **Agregar nuevas actividades no está disponible en producción**")
+        # No mostrar mensaje en modo de solo lectura, simplemente no mostrar la sección
 
 # ========== FUNCIONES DE MODAL DE EDICIÓN ==========
 
@@ -1844,6 +1848,19 @@ def show_client_data_tab_improved(client):
 
 def show_activities_management_tab(client):
     """Pestaña de gestión de actividades en el modal de edición"""
+    # En modo de solo lectura, solo mostrar las actividades sin posibilidad de edición
+    if is_read_only_mode():
+        st.subheader("📋 Actividades del Cliente (Solo Lectura)")
+        
+        activities = get_client_activities(client['id'])
+        if not activities.empty:
+            # Mostrar solo información de lectura
+            for _, activity in activities.iterrows():
+                st.write(f"• **{activity['activity_name']}**")
+        else:
+            st.info("No hay actividades configuradas para este cliente.")
+        return
+    
     st.subheader("Gestión de Actividades y Frecuencias")
     
     activities = get_client_activities(client['id'])
