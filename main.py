@@ -21,9 +21,7 @@ def main():
         st.title("Kronos Web App 🔧 DEV")
         st.caption(f"🔧 Entorno de Desarrollo - BD: {config.get_database_path()}")
     else:
-        st.title("Kronos Web App 📖 PRODUCCIÓN")
-        st.warning("🚫 **MODO SOLO LECTURA** - No se permiten modificaciones en producción")
-    
+        st.title("Kronos Web App")
     # Mostrar información del entorno en desarrollo
     config.show_environment_info()
     
@@ -40,7 +38,6 @@ def main():
     if is_read_only_mode():
         # Solo mostrar opciones de lectura en producción
         page_options = ["Clientes"]
-        st.sidebar.info("🚫 Modo solo lectura activo")
     else:
         # Mostrar todas las opciones en desarrollo
         page_options = [
