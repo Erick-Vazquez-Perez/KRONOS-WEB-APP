@@ -18,7 +18,7 @@ from database import (
 from date_calculator import recalculate_client_dates
 from calendar_utils import create_client_calendar_table, format_frequency_description
 from client_constants import get_tipos_cliente, get_regiones
-from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
+from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_metric_html, get_button_html
 import sqlite3
 
 # ========== FUNCIONES DE GALERÍA Y NAVEGACIÓN ==========
@@ -570,9 +570,9 @@ def show_client_detail():
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total de Fechas", total_dates)
+            st.markdown(get_metric_html("Total de Fechas del cliente", total_dates), unsafe_allow_html=True)
         with col2:
-            st.metric("Actividades", activities_count)
+            st.markdown(get_metric_html("Número de actividades", activities_count), unsafe_allow_html=True)
         with col3:
             # Próxima fecha
             try:
@@ -581,11 +581,11 @@ def show_client_detail():
                     next_date = future_dates.iloc[0]['date']
                     next_date_obj = datetime.strptime(next_date, '%Y-%m-%d')
                     days_until = (next_date_obj - datetime.now()).days
-                    st.metric("Próxima Fecha", f"{days_until} días")
+                    st.markdown(get_metric_html("Próxima Fecha", f"{days_until} días"), unsafe_allow_html=True)
                 else:
-                    st.metric("Próxima Fecha", "N/A")
+                    st.markdown(get_metric_html("Próxima Fecha", "N/A"), unsafe_allow_html=True)
             except:
-                st.metric("Próxima Fecha", "N/A")
+                st.markdown(get_metric_html("Próxima Fecha", "N/A"), unsafe_allow_html=True)
     
     # Mostrar vista según selección
     try:
@@ -607,17 +607,17 @@ def show_client_detail():
                     
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Total de Fechas", summary['total_fechas'])
+                        st.markdown(get_metric_html("Total de Fechas", summary['total_fechas']), unsafe_allow_html=True)
                     with col2:
-                        st.metric("Actividades", summary['actividades'])
+                        st.markdown(get_metric_html("Actividades", summary['actividades']), unsafe_allow_html=True)
                     with col3:
-                        st.metric("Meses con Actividad", summary['meses_con_actividad'])
+                        st.markdown(get_metric_html("Meses con Actividad", summary['meses_con_actividad']), unsafe_allow_html=True)
                     with col4:
                         if summary['proxima_fecha']:
                             next_date = datetime.strptime(summary['proxima_fecha']['fecha'], '%Y-%m-%d')
-                            st.metric("Próxima Fecha", next_date.strftime('%d-%b'))
+                            st.markdown(get_metric_html("Próxima Fecha", next_date.strftime('%d-%b')), unsafe_allow_html=True)
                         else:
-                            st.metric("Próxima Fecha", "N/A")
+                            st.markdown(get_metric_html("Próxima Fecha", "N/A"), unsafe_allow_html=True)
                 except:
                     pass
             else:
@@ -780,9 +780,9 @@ def show_monthly_readonly_calendar(client_id, selected_month):
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Fechas en el Mes", total_dates_month)
+        st.markdown(get_metric_html("Fechas en el Mes", total_dates_month), unsafe_allow_html=True)
     with col2:
-        st.metric("Actividades", activities_count)
+        st.markdown(get_metric_html("Actividades", activities_count), unsafe_allow_html=True)
     with col3:
         # Próxima fecha del mes
         try:
@@ -790,11 +790,11 @@ def show_monthly_readonly_calendar(client_id, selected_month):
             if future_dates:
                 next_date = min(future_dates, key=lambda x: x['date'])
                 days_until = (next_date['date'] - datetime.now()).days
-                st.metric("Próxima Fecha", f"{days_until} días")
+                st.markdown(get_metric_html("Próxima Fecha", f"{days_until} días"), unsafe_allow_html=True)
             else:
-                st.metric("Próxima Fecha", "N/A")
+                st.markdown(get_metric_html("Próxima Fecha", "N/A"), unsafe_allow_html=True)
         except:
-            st.metric("Próxima Fecha", "N/A")
+            st.markdown(get_metric_html("Próxima Fecha", "N/A"), unsafe_allow_html=True)
     
     # Crear tabla agrupada por actividad - solo fechas del mes seleccionado
     table_data = {}
@@ -893,12 +893,12 @@ def show_inline_editable_calendar(client_id):
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total de Fechas", total_dates)
+        st.markdown(get_metric_html("Total de Fechas", total_dates), unsafe_allow_html=True)
     with col2:
-        st.metric("Actividades", activities_count)
+        st.markdown(get_metric_html("Actividades", activities_count), unsafe_allow_html=True)
     with col3:
         max_dates_per_activity = dates_df.groupby('activity_name')['date_position'].max().max()
-        st.metric("Máx. Fechas/Actividad", max_dates_per_activity)
+        st.markdown(get_metric_html("Máx. Fechas/Actividad", max_dates_per_activity), unsafe_allow_html=True)
     
     # Preparar datos para st.data_editor
     edit_df = prepare_calendar_for_editing(dates_df)
@@ -987,9 +987,9 @@ def show_monthly_editable_calendar(client_id):
     
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Total de Fechas", total_dates)
+        st.markdown(get_metric_html("Total de Fechas", total_dates), unsafe_allow_html=True)
     with col2:
-        st.metric("Actividades", activities_count)
+        st.markdown(get_metric_html("Actividades", activities_count), unsafe_allow_html=True)
     
     # Selector de mes
     months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
