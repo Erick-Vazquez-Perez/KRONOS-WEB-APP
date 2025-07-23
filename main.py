@@ -10,8 +10,7 @@ from werfen_styles import get_custom_css, get_werfen_header, get_werfen_footer
 
 # Configuración de la página
 st.set_page_config(
-    page_title="KRONOS 2.0 - Werfen", 
-    page_icon="📅",
+    page_title="Kronos - Werfen",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -30,10 +29,7 @@ def main():
     
     # Mostrar información del entorno en desarrollo
     if config.is_development():
-        st.info("🔧 **Entorno de Desarrollo** - Todas las funciones habilitadas")
-    elif is_read_only_mode():
-        st.warning("🔒 **Entorno de Producción** - Modo solo lectura")
-    
+        st.info("**Entorno de Desarrollo** - Todas las funciones habilitadas")
     config.show_environment_info()
     
     # Inicializar base de datos
