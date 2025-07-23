@@ -224,8 +224,8 @@ class DatabaseConfig:
         
         configs = {
             'development': {
-                'database_name': 'client_calendar_dev.db',
-                'description': 'Base de datos de desarrollo',
+                'database_name': 'client_calendar.db',
+                'description': 'Base de datos compartida (desarrollo)',
                 'backup_enabled': True,
                 'debug_mode': True
             },

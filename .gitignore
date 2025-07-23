@@ -6,9 +6,7 @@
 
 # Base de datos específicas de Kronos
 # client_calendar.db - INCLUIDO para producción en Streamlit Cloud
-client_calendar_dev.db
 client_calendar_test.db
-client_calendar_*.db
 
 # Excluir client_calendar.db solo en desarrollo local si existe .env
 # En producción (Streamlit Cloud) este archivo DEBE estar versionado
@@ -48,16 +46,16 @@ desktop.ini
 # Streamlit
 .streamlit/secrets.toml
 
-# Scripts temporales
-update_db_connections.py
-quick_migrate.py
-check_databases.py
-quick_test_*.py
-test_complete_*.py
+# Scripts temporales (ya eliminados)
+# update_db_connections.py
+# quick_migrate.py  
+# check_databases.py
+# quick_test_*.py
+# test_complete_*.py
 
-# Archivos de desarrollo
+# Archivos de desarrollo (ya eliminados)
 requirements-dev.txt
-test_*.py
-debug_*.py
+# test_*.py
+# debug_*.py
 temp_*.py
 *_temp.py
