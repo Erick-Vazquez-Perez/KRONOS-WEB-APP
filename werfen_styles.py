@@ -559,10 +559,7 @@ def get_werfen_header():
     """Retorna el header personalizado de Werfen"""
     return """
     <div class="werfen-logo fade-in-up">
-        <h1>KRONOS 2.0</h1>
-    </div>
-    <div class="werfen-subtitle fade-in-up">
-        Sistema de Gestión de Clientes y Calendarios
+        <h1>Kronos Web App</h1>
     </div>
     """
 
@@ -601,7 +598,7 @@ def get_werfen_footer():
     """Retorna el footer personalizado"""
     return """
     <div class="werfen-footer">
-        <p>KRONOS 2.0 - Sistema de Gestión de Clientes | Powered by Werfen</p>
+        <p>Kronos Web App - Shipment Consolidation | Werfen México Customer Service</p>
     </div>
     """
 
