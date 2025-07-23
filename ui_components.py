@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from config import is_read_only_mode
 from database import (
     get_clients, get_client_by_id, add_client, update_client, delete_client,
     get_frequency_templates, add_frequency_template, update_frequency_template,
@@ -433,9 +434,12 @@ def show_client_detail():
             st.rerun()
     
     with col2:
-        if st.button("✏️ Editar Cliente"):
-            st.session_state.show_edit_modal = True
-            st.rerun()
+        if not is_read_only_mode():
+            if st.button("✏️ Editar Cliente"):
+                st.session_state.show_edit_modal = True
+                st.rerun()
+        else:
+            st.button("✏️ Editar Cliente", disabled=True, help="🚫 No disponible en modo producción")
     
     # Mostrar modal de edición si está activado
     if st.session_state.get('show_edit_modal', False):
@@ -1537,6 +1541,30 @@ def show_edit_modal_improved(client):
         st.session_state.show_edit_modal = False
         return
     
+    if is_read_only_mode():
+        st.header(f"👁️ Ver Cliente: {client['name']}")
+        st.warning("🚫 **MODO SOLO LECTURA** - No se permiten modificaciones en producción")
+        
+        # Mostrar solo información de lectura
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🔙 Volver"):
+                st.session_state.show_edit_modal = False
+                st.rerun()
+        
+        # Tabs de solo lectura
+        tab1, tab2, tab3 = st.tabs(["📋 Datos del Cliente", "⚙️ Actividades y Frecuencias", "📅 Ver Fechas"])
+        
+        with tab1:
+            show_client_data_tab_improved(client)
+        
+        with tab2:
+            show_activities_management_tab(client)
+        
+        with tab3:
+            show_dates_editing_tab(client)
+        return
+    
     st.header(f"✏️ Editar Cliente: {client['name']}")
     
     # Tabs para organizar mejor el contenido
@@ -1553,7 +1581,11 @@ def show_edit_modal_improved(client):
 
 def show_client_data_tab_improved(client):
     """Pestaña de datos del cliente en el modal de edición - Versión mejorada"""
-    st.subheader("Información del Cliente")
+    if is_read_only_mode():
+        st.subheader("📋 Información del Cliente (Solo Lectura)")
+        st.info("🚫 Los campos están deshabilitados en el entorno de producción")
+    else:
+        st.subheader("Información del Cliente")
     
     # Validar que client no es None y tiene los datos necesarios
     if client is None:
@@ -1592,27 +1624,32 @@ def show_client_data_tab_improved(client):
             current_client = updated_client
         st.session_state[f'{key_prefix}_just_updated'] = False
     
-    # Mostrar campos editables
+    # Mostrar campos editables (o de solo lectura)
     col1, col2 = st.columns(2)
+    
+    readonly = is_read_only_mode()
     
     with col1:
         name = st.text_input(
             "Nombre del Cliente", 
             value=safe_get('name') if current_client is client else current_client.get('name', ''),
             key=f"{key_prefix}_name_input",
-            help="Edita el nombre del cliente"
+            help="Edita el nombre del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         codigo_ag = st.text_input(
             "Código AG", 
             value=safe_get('codigo_ag') if current_client is client else current_client.get('codigo_ag', ''),
             key=f"{key_prefix}_codigo_ag_input",
-            help="Edita el código AG"
+            help="Edita el código AG" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         codigo_we = st.text_input(
             "Código WE", 
             value=safe_get('codigo_we') if current_client is client else current_client.get('codigo_we', ''),
             key=f"{key_prefix}_codigo_we_input",
-            help="Edita el código WE"
+            help="Edita el código WE" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
     
     with col2:
@@ -1620,31 +1657,36 @@ def show_client_data_tab_improved(client):
             "CSR", 
             value=safe_get('csr') if current_client is client else current_client.get('csr', ''),
             key=f"{key_prefix}_csr_input",
-            help="Edita el CSR"
+            help="Edita el CSR" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         vendedor = st.text_input(
             "Vendedor", 
             value=safe_get('vendedor') if current_client is client else current_client.get('vendedor', ''),
             key=f"{key_prefix}_vendedor_input",
-            help="Edita el vendedor"
+            help="Edita el vendedor" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         calendario_sap = st.text_input(
             "Calendario SAP", 
             value=safe_get('calendario_sap') if current_client is client else current_client.get('calendario_sap', ''),
             key=f"{key_prefix}_calendario_sap_input",
-            help="Edita el calendario SAP"
+            help="Edita el calendario SAP" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
     
-    # Verificar si hay cambios (comparar con datos originales del cliente)
-    original_data = current_client if current_client is not client else client
-    has_changes = (
-        name != (original_data.get('name', '') if hasattr(original_data, 'get') else original_data['name']) or
-        codigo_ag != (original_data.get('codigo_ag', '') or '' if hasattr(original_data, 'get') else original_data['codigo_ag'] or '') or
-        codigo_we != (original_data.get('codigo_we', '') or '' if hasattr(original_data, 'get') else original_data['codigo_we'] or '') or
-        csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
-        vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
-        calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '')
-    )
+    # Verificar si hay cambios (solo si no estamos en modo readonly)
+    has_changes = False
+    if not readonly:
+        original_data = current_client if current_client is not client else client
+        has_changes = (
+            name != (original_data.get('name', '') if hasattr(original_data, 'get') else original_data['name']) or
+            codigo_ag != (original_data.get('codigo_ag', '') or '' if hasattr(original_data, 'get') else original_data['codigo_ag'] or '') or
+            codigo_we != (original_data.get('codigo_we', '') or '' if hasattr(original_data, 'get') else original_data['codigo_we'] or '') or
+            csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
+            vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
+            calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '')
+        )
     
     # Mostrar indicador de cambios
     if has_changes:
@@ -1671,82 +1713,88 @@ def show_client_data_tab_improved(client):
             if calendario_sap != get_original_value('calendario_sap'):
                 st.write(f"• **Calendario SAP:** '{get_original_value('calendario_sap')}' → '{calendario_sap}'")
     
-    # Botones de acción
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        if st.button("💾 Guardar Información del Cliente", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_save_data",
-                    disabled=not has_changes):
-            if name.strip():
-                try:
-                    with st.spinner("🔄 Actualizando cliente..."):
-                        # Realizar la actualización
-                        success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap)
-                    
-                    if success:
-                        # Establecer flags para mostrar mensaje de éxito y recargar datos
-                        st.session_state[f'{key_prefix}_update_success'] = True
-                        st.session_state[f'{key_prefix}_just_updated'] = True
+    # Botones de acción (solo en modo edición)
+    if not readonly:
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            if st.button("💾 Guardar Información del Cliente", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_save_data",
+                        disabled=not has_changes):
+                if name.strip():
+                    try:
+                        with st.spinner("🔄 Actualizando cliente..."):
+                            # Realizar la actualización
+                            success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap)
                         
-                        # Limpiar los inputs para que se recarguen con los nuevos valores
-                        input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
-                                     f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                                     f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
-                        
-                        for key in input_keys:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        # Hacer rerun para mostrar la actualización SIN cerrar el modal
+                        if success:
+                            # Establecer flags para mostrar mensaje de éxito y recargar datos
+                            st.session_state[f'{key_prefix}_update_success'] = True
+                            st.session_state[f'{key_prefix}_just_updated'] = True
+                            
+                            # Limpiar los inputs para que se recarguen con los nuevos valores
+                            input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
+                                         f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
+                                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
+                            
+                            for key in input_keys:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            
+                            # Hacer rerun para mostrar la actualización SIN cerrar el modal
+                            st.rerun()
+                        else:
+                            st.session_state[f'{key_prefix}_update_error'] = "Error al actualizar cliente en la base de datos"
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.session_state[f'{key_prefix}_update_error'] = f"Error al actualizar cliente: {e}"
                         st.rerun()
-                    else:
-                        st.session_state[f'{key_prefix}_update_error'] = "Error al actualizar cliente en la base de datos"
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.session_state[f'{key_prefix}_update_error'] = f"Error al actualizar cliente: {e}"
-                    st.rerun()
-            else:
-                st.error("❌ El nombre del cliente es obligatorio")
-    
-    with col2:
-        if st.button("🔄 Resetear", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_reset_data",
-                    help="Restaurar valores originales"):
-            # Limpiar los keys de input para forzar recarga con valores originales
-            input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
-                         f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
-            
-            for key in input_keys:
-                if key in st.session_state:
+                else:
+                    st.error("❌ El nombre del cliente es obligatorio")
+        
+        with col2:
+            if st.button("🔄 Resetear", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_reset_data",
+                        help="Restaurar valores originales"):
+                # Limpiar los keys de input para forzar recarga con valores originales
+                input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
+                             f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
+                             f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
+                
+                for key in input_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                # Limpiar también los flags de actualización
+                if f'{key_prefix}_just_updated' in st.session_state:
+                    del st.session_state[f'{key_prefix}_just_updated']
+                
+                st.rerun()
+        
+        with col3:
+            if st.button("✖️ Cerrar", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_close_modal",
+                        help="Cerrar sin guardar cambios"):
+                # Limpiar el modal
+                st.session_state.show_edit_modal = False
+                # Limpiar todos los estados relacionados con la edición
+                keys_to_clear = [key for key in st.session_state.keys() if key.startswith(f'{key_prefix}_')]
+                for key in keys_to_clear:
                     del st.session_state[key]
-            
-            # Limpiar también los flags de actualización
-            if f'{key_prefix}_just_updated' in st.session_state:
-                del st.session_state[f'{key_prefix}_just_updated']
-            
-            st.rerun()
-    
-    with col3:
-        if st.button("✖️ Cerrar", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_close_modal",
-                    help="Cerrar sin guardar cambios"):
-            # Cerrar modal y limpiar estados
-            st.session_state.show_edit_modal = False
-            
-            # Limpiar todos los keys relacionados con este cliente
-            keys_to_clear = [key for key in st.session_state.keys() 
-                           if key.startswith(f"edit_client_{client_id}")]
-            
-            for key in keys_to_clear:
-                del st.session_state[key]
-            
-            st.rerun()
+                st.rerun()
+    else:
+        # En modo solo lectura, solo mostrar botón de cerrar
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔙 Cerrar", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_close_readonly"):
+                st.session_state.show_edit_modal = False
+                st.rerun()
 
 def show_activities_management_tab(client):
     """Pestaña de gestión de actividades en el modal de edición"""
@@ -1901,6 +1949,12 @@ def show_dates_editing_tab(client):
 
 def show_add_client():
     """Muestra el formulario para agregar un nuevo cliente"""
+    if is_read_only_mode():
+        st.header("➕ Agregar Nuevo Cliente")
+        st.error("🚫 **FUNCIÓN NO DISPONIBLE EN PRODUCCIÓN**")
+        st.info("Esta función está deshabilitada en el entorno de producción para mantener la integridad de los datos.")
+        return
+    
     st.header("➕ Agregar Nuevo Cliente")
     
     # Obtener frecuencias disponibles
@@ -2078,6 +2132,12 @@ def show_add_client():
 
 def show_manage_frequencies():
     """Muestra la interfaz de administración de frecuencias"""
+    if is_read_only_mode():
+        st.header("⚙️ Administrar Frecuencias")
+        st.error("🚫 **FUNCIÓN NO DISPONIBLE EN PRODUCCIÓN**")
+        st.info("Esta función está deshabilitada en el entorno de producción para mantener la integridad de los datos.")
+        return
+    
     st.header("⚙️ Administrar Frecuencias")
     
     # Inicializar estados para la edición
@@ -2131,24 +2191,30 @@ def show_frequency_view(template):
             st.write("📝 **Sin uso**")
     
     with col3:
-        if st.button("✏️ Editar", key=f"edit_{template['id']}", use_container_width=True):
-            st.session_state.editing_frequency = template['id']
-            st.rerun()
+        if not is_read_only_mode():
+            if st.button("✏️ Editar", key=f"edit_{template['id']}", use_container_width=True):
+                st.session_state.editing_frequency = template['id']
+                st.rerun()
+        else:
+            st.button("✏️ Editar", key=f"edit_{template['id']}", disabled=True, use_container_width=True, help="🚫 No disponible en producción")
     
     with col4:
-        usage_count = get_frequency_usage_count(template['id'])
-        if usage_count == 0:
-            if st.button("🗑️ Eliminar", key=f"delete_{template['id']}", use_container_width=True):
-                success, message = delete_frequency_template(template['id'])
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
+        if not is_read_only_mode():
+            usage_count = get_frequency_usage_count(template['id'])
+            if usage_count == 0:
+                if st.button("🗑️ Eliminar", key=f"delete_{template['id']}", use_container_width=True):
+                    success, message = delete_frequency_template(template['id'])
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+            else:
+                st.button("🔒 En uso", key=f"disabled_{template['id']}", 
+                        disabled=True, use_container_width=True,
+                        help=f"No se puede eliminar porque está siendo usada por {usage_count} actividad(es)")
         else:
-            st.button("🔒 En uso", key=f"disabled_{template['id']}", 
-                    disabled=True, use_container_width=True,
-                    help=f"No se puede eliminar porque está siendo usada por {usage_count} actividad(es)")
+            st.button("🗑️ Eliminar", key=f"delete_{template['id']}", disabled=True, use_container_width=True, help="🚫 No disponible en producción")
 
 def show_frequency_edit_form(template):
     """Muestra el formulario de edición de una frecuencia"""

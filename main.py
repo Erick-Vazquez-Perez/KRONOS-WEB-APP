@@ -1,6 +1,6 @@
 import streamlit as st
 from database import init_database
-from config import get_db_config
+from config import get_db_config, is_read_only_mode
 from ui_components import (
     show_clients_gallery, 
     show_add_client, 
@@ -21,7 +21,8 @@ def main():
         st.title("Kronos Web App 🔧 DEV")
         st.caption(f"🔧 Entorno de Desarrollo - BD: {config.get_database_path()}")
     else:
-        st.title("Kronos Web App")
+        st.title("Kronos Web App 📖 PRODUCCIÓN")
+        st.warning("🚫 **MODO SOLO LECTURA** - No se permiten modificaciones en producción")
     
     # Mostrar información del entorno en desarrollo
     config.show_environment_info()
@@ -34,19 +35,31 @@ def main():
     
     # Sidebar para navegación
     st.sidebar.title("Menú Principal")
-    page = st.sidebar.selectbox("Selecciona una opción", [
-        "Clientes",
-        "Agregar Cliente",
-        "Administrar Frecuencias"
-    ])
+    
+    # Configurar opciones según el entorno
+    if is_read_only_mode():
+        # Solo mostrar opciones de lectura en producción
+        page_options = ["Clientes"]
+        st.sidebar.info("🚫 Modo solo lectura activo")
+    else:
+        # Mostrar todas las opciones en desarrollo
+        page_options = [
+            "Clientes",
+            "Agregar Cliente", 
+            "Administrar Frecuencias"
+        ]
+    
+    page = st.sidebar.selectbox("Selecciona una opción", page_options)
     
     # Navegación principal
     if page == "Clientes":
         show_clients_gallery()
-    elif page == "Agregar Cliente":
+    elif page == "Agregar Cliente" and not is_read_only_mode():
         show_add_client()
-    elif page == "Administrar Frecuencias":
+    elif page == "Administrar Frecuencias" and not is_read_only_mode():
         show_manage_frequencies()
+    elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias"]:
+        st.error("🚫 Esta función no está disponible en modo producción")
 
 def initialize_session_state():
     """Inicializa los estados de sesión necesarios"""

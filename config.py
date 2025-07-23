@@ -386,3 +386,7 @@ def is_development():
 def is_production():
     """Función helper para verificar si estamos en producción"""
     return db_config.is_production()
+
+def is_read_only_mode():
+    """Función helper para verificar si estamos en modo de solo lectura (producción)"""
+    return db_config.is_production()
