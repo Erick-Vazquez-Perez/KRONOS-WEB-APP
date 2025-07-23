@@ -310,10 +310,10 @@ def show_clients_gallery_view(clients_to_show):
                     else:
                         current_month_name = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                                             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][datetime.now().month - 1]
-                        st.markdown(f"**📅 {current_month_name}**")
+                        st.markdown(f"{current_month_name}")
                         st.write("Sin actividades este mes")
                 except Exception as e:
-                    st.write("📅 Sin calendario configurado")
+                    st.write("Sin calendario configurado")
                 
                 # Botón para ver detalle
                 if st.button(f"Ver Detalle", key=f"detail_{client['id']}"):
