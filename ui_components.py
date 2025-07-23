@@ -477,9 +477,15 @@ def show_client_detail():
     col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
     
     with col1:
+        # Configurar opciones de vista según el modo
+        if is_read_only_mode():
+            view_options = ["Vista por Mes", "Año Completo"]
+        else:
+            view_options = ["Vista por Mes", "Edición por Año", "Año Completo"]
+        
         view_type = st.selectbox(
             "Vista del calendario:",
-            ["Vista por Mes", "Edición por Año", "Año Completo"],
+            view_options,
             help="Selecciona cómo quieres ver el calendario",
             key=f"view_type_{client_id}"
         )
@@ -502,14 +508,20 @@ def show_client_detail():
         if view_type == "Vista por Mes":
             st.write("*Vista de solo lectura*")
         elif view_type == "Edición por Año":
-            st.write("*Vista editable*")
+            if not is_read_only_mode():
+                st.write("*Vista editable*")
+        elif view_type == "Año Completo":
+            st.write("*Vista completa*")
     
     with col4:
-        if st.button("🔄 Recalcular", key=f"recalc_{client_id}"):
-            with st.spinner("Recalculando fechas..."):
-                recalculate_client_dates(client_id)
-            st.success("✅ Fechas recalculadas")
-            st.rerun()
+        if not is_read_only_mode():
+            if st.button("🔄 Recalcular", key=f"recalc_{client_id}"):
+                with st.spinner("Recalculando fechas..."):
+                    recalculate_client_dates(client_id)
+                st.success("✅ Fechas recalculadas")
+                st.rerun()
+        else:
+            st.button("🔄 Recalcular", key=f"recalc_{client_id}", disabled=True, help="🚫 No disponible en producción")
     
     # Información de estado del calendario
     dates_df = get_calculated_dates(client_id)
@@ -820,6 +832,12 @@ def show_monthly_readonly_calendar(client_id, selected_month):
 def show_inline_editable_calendar(client_id):
     """Muestra una tabla con edición inline usando st.data_editor - Todas las fechas del cliente"""
     
+    # En modo de solo lectura, mostrar mensaje y salir
+    if is_read_only_mode():
+        st.warning("🚫 **Edición No Disponible en Producción**")
+        st.info("Esta vista de edición está deshabilitada en el entorno de producción.")
+        return
+    
     dates_df = get_calculated_dates(client_id)
     
     if dates_df.empty:
@@ -907,6 +925,12 @@ def show_inline_editable_calendar(client_id):
 
 def show_monthly_editable_calendar(client_id):
     """Muestra un calendario mensual editable con navegación entre meses"""
+    
+    # En modo de solo lectura, mostrar mensaje y salir
+    if is_read_only_mode():
+        st.warning("🚫 **Edición No Disponible en Producción**")
+        st.info("Esta vista de edición está deshabilitada en el entorno de producción.")
+        return
     
     dates_df = get_calculated_dates(client_id)
     
@@ -1043,6 +1067,17 @@ def show_monthly_editable_calendar(client_id):
 
 def show_editable_full_year_calendar(client_id):
     """Muestra un calendario anual editable por meses"""
+    
+    # En modo de solo lectura, redirigir a vista de solo lectura
+    if is_read_only_mode():
+        st.warning("🚫 **Vista de Edición No Disponible en Producción**")
+        st.info("Mostrando vista de solo lectura del calendario completo")
+        calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+        if not calendar_df.empty:
+            st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay fechas calculadas para este cliente.")
+        return
     
     dates_df = get_calculated_dates(client_id)
     
@@ -1479,57 +1514,68 @@ def show_client_activities_section(client_id):
                         "Frecuencia:",
                         freq_options,
                         index=current_freq_index,
-                        key=f"freq_{activity['activity_name']}_{idx}"
+                        key=f"freq_{activity['activity_name']}_{idx}",
+                        disabled=is_read_only_mode(),
+                        help="Solo lectura en producción" if is_read_only_mode() else None
                     )
                     
-                    # Actualizar frecuencia si cambió
-                    new_freq_id = freq_ids[freq_options.index(new_freq)]
-                    if new_freq_id != current_freq_id:
-                        if st.button("💾", key=f"save_freq_{idx}", help="Guardar cambio de frecuencia"):
-                            if update_client_activity_frequency(client_id, activity['activity_name'], new_freq_id):
-                                st.success(f"Frecuencia actualizada para {activity['activity_name']}")
-                                st.rerun()
+                    # Actualizar frecuencia si cambió (solo en modo edición)
+                    if not is_read_only_mode():
+                        new_freq_id = freq_ids[freq_options.index(new_freq)]
+                        if new_freq_id != current_freq_id:
+                            if st.button("💾", key=f"save_freq_{idx}", help="Guardar cambio de frecuencia"):
+                                if update_client_activity_frequency(client_id, activity['activity_name'], new_freq_id):
+                                    st.success(f"Frecuencia actualizada para {activity['activity_name']}")
+                                    st.rerun()
                 
                 with col3:
                     # Botón para eliminar actividad
-                    if st.button("🗑️", key=f"delete_{idx}", help="Eliminar actividad"):
-                        if delete_client_activity(client_id, activity['activity_name']):
-                            st.success(f"Actividad {activity['activity_name']} eliminada")
-                            st.rerun()
+                    if not is_read_only_mode():
+                        if st.button("🗑️", key=f"delete_{idx}", help="Eliminar actividad"):
+                            if delete_client_activity(client_id, activity['activity_name']):
+                                st.success(f"Actividad '{activity['activity_name']}' eliminada")
+                                st.rerun()
+                            else:
+                                st.error("Error al eliminar la actividad")
+                    else:
+                        st.button("🗑️", key=f"delete_{idx}", disabled=True, help="🚫 No disponible en producción")
             
             st.divider()
         
-        # Agregar nueva actividad
-        st.write("**Agregar Nueva Actividad:**")
-        
-        col1, col2, col3 = st.columns([3, 3, 1])
-        
-        with col1:
-            new_activity_name = st.text_input(
-                "Nombre de la actividad:",
-                placeholder="Ej: Inspección de Calidad",
-                key="new_activity_name"
-            )
-        
-        with col2:
-            freq_options = frequency_templates['name'].tolist()
-            freq_ids = frequency_templates['id'].tolist()
+        # Agregar nueva actividad (solo en modo edición)
+        if not is_read_only_mode():
+            st.write("**Agregar Nueva Actividad:**")
             
-            selected_freq = st.selectbox(
-                "Frecuencia:",
-                freq_options,
-                key="new_activity_freq"
-            )
-        
-        with col3:
-            if st.button("➕ Agregar", key="add_activity"):
-                if new_activity_name.strip():
-                    selected_freq_id = freq_ids[freq_options.index(selected_freq)]
-                    if add_client_activity(client_id, new_activity_name.strip(), selected_freq_id):
-                        st.success(f"Actividad '{new_activity_name}' agregada")
-                        st.rerun()
-                else:
-                    st.error("El nombre de la actividad es obligatorio")
+            col1, col2, col3 = st.columns([3, 3, 1])
+            
+            with col1:
+                new_activity_name = st.text_input(
+                    "Nombre de la actividad:",
+                    placeholder="Ej: Inspección de Calidad",
+                    key="new_activity_name"
+                )
+            
+            with col2:
+                freq_options = frequency_templates['name'].tolist()
+                freq_ids = frequency_templates['id'].tolist()
+                
+                selected_freq = st.selectbox(
+                    "Frecuencia:",
+                    freq_options,
+                    key="new_activity_freq"
+                )
+            
+            with col3:
+                if st.button("➕ Agregar", key="add_activity"):
+                    if new_activity_name.strip():
+                        selected_freq_id = freq_ids[freq_options.index(selected_freq)]
+                        if add_client_activity(client_id, new_activity_name.strip(), selected_freq_id):
+                            st.success(f"Actividad '{new_activity_name}' agregada")
+                            st.rerun()
+                    else:
+                        st.error("El nombre de la actividad es obligatorio")
+        else:
+            st.info("🚫 **Agregar nuevas actividades no está disponible en producción**")
 
 # ========== FUNCIONES DE MODAL DE EDICIÓN ==========
 
@@ -1885,6 +1931,18 @@ def show_activities_management_tab(client):
 
 def show_dates_editing_tab(client):
     """Pestaña de edición de fechas en el modal de edición"""
+    if is_read_only_mode():
+        st.subheader("📅 Fechas del Cliente (Solo Lectura)")
+        st.info("🚫 La edición de fechas está deshabilitada en el entorno de producción")
+        
+        # Mostrar fechas en modo de solo lectura
+        dates_df = get_calculated_dates(client['id'])
+        if not dates_df.empty:
+            st.dataframe(dates_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay fechas calculadas para este cliente.")
+        return
+    
     st.subheader("Edición Manual de Fechas")
     
     dates_df = get_calculated_dates(client['id'])
