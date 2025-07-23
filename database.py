@@ -175,16 +175,16 @@ def get_client_by_id(client_id):
     finally:
         conn.close()
 
-def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
+def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
     """Agrega un nuevo cliente"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute('''
-            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap))
+            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region))
         client_id = cursor.lastrowid
         
         conn.commit()
@@ -198,7 +198,7 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
     finally:
         conn.close()
 
-def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap):
+def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
     """Actualiza la información de un cliente"""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -220,13 +220,15 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
         print(f"  CSR: '{csr}'")
         print(f"  Vendedor: '{vendedor}'")
         print(f"  Calendario SAP: '{calendario_sap}'")
+        print(f"  Tipo Cliente: '{tipo_cliente}'")
+        print(f"  Región: '{region}'")
         
         # Realizar la actualización
         cursor.execute('''
             UPDATE clients 
-            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?
+            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?, tipo_cliente = ?, region = ?
             WHERE id = ?
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, client_id))
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, client_id))
         
         # Verificar que se actualizó al menos una fila
         if cursor.rowcount == 0:

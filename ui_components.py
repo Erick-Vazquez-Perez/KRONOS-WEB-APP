@@ -17,6 +17,7 @@ from database import (
 )
 from date_calculator import recalculate_client_dates
 from calendar_utils import create_client_calendar_table, format_frequency_description
+from client_constants import get_tipos_cliente, get_regiones
 import sqlite3
 
 # ========== FUNCIONES DE GALERÍA Y NAVEGACIÓN ==========
@@ -47,7 +48,7 @@ def show_clients_gallery():
     
     with col1:
         search_term = st.text_input(
-            "Buscar por nombre, código AG, CSR o vendedor:",
+            "Buscar por nombre, código AG, CSR, vendedor, tipo o región:",
             placeholder="Ingresa tu búsqueda...",
             key="client_search",
             help="Busca clientes por cualquiera de sus campos principales"
@@ -61,8 +62,8 @@ def show_clients_gallery():
                 del st.session_state["client_search"]
             st.rerun()
     
-    # Fila inferior: filtros adicionales
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+    # Fila inferior: filtros adicionales  
+    col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
     
     with col1:
         # Filtro por CSR
@@ -85,8 +86,28 @@ def show_clients_gallery():
         )
     
     with col3:
+        # Filtro por tipo de cliente
+        tipo_options = ['Todos'] + get_tipos_cliente()
+        selected_tipo = st.selectbox(
+            "Filtrar por Tipo:",
+            tipo_options,
+            index=0,  # Siempre empezar con "Todos"
+            key="tipo_filter"
+        )
+    
+    with col4:
+        # Filtro por región
+        region_options = ['Todos'] + get_regiones()
+        selected_region = st.selectbox(
+            "Filtrar por Región:",
+            region_options,
+            index=0,  # Siempre empezar con "Todos"
+            key="region_filter"
+        )
+    
+    with col5:
         # Ordenar por
-        sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor']
+        sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región']
         sort_by = st.selectbox(
             "Ordenar por:",
             sort_options,
@@ -94,11 +115,11 @@ def show_clients_gallery():
             key="sort_filter"
         )
     
-    with col4:
+    with col6:
         st.write("")  # Espacio para alinear el botón
         if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
             # Eliminar todas las keys de los filtros para que se reinicialicen
-            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "sort_filter"]
+            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "tipo_filter", "region_filter", "sort_filter"]
             for key in filter_keys:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -113,7 +134,9 @@ def show_clients_gallery():
             filtered_clients['name'].str.contains(search_term, case=False, na=False) |
             filtered_clients['codigo_ag'].str.contains(search_term, case=False, na=False) |
             filtered_clients['csr'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['vendedor'].str.contains(search_term, case=False, na=False)
+            filtered_clients['vendedor'].str.contains(search_term, case=False, na=False) |
+            filtered_clients['tipo_cliente'].str.contains(search_term, case=False, na=False) |
+            filtered_clients['region'].str.contains(search_term, case=False, na=False)
         ]
     
     # Aplicar filtro de CSR
@@ -123,6 +146,14 @@ def show_clients_gallery():
     # Aplicar filtro de vendedor
     if selected_vendedor and selected_vendedor != 'Todos':
         filtered_clients = filtered_clients[filtered_clients['vendedor'] == selected_vendedor]
+    
+    # Aplicar filtro de tipo de cliente
+    if selected_tipo and selected_tipo != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients['tipo_cliente'] == selected_tipo]
+    
+    # Aplicar filtro de región
+    if selected_region and selected_region != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients['region'] == selected_region]
     
     # Aplicar ordenamiento
     if sort_by == 'Nombre A-Z':
@@ -135,6 +166,10 @@ def show_clients_gallery():
         filtered_clients = filtered_clients.sort_values('csr', ascending=True, na_position='last')
     elif sort_by == 'Vendedor':
         filtered_clients = filtered_clients.sort_values('vendedor', ascending=True, na_position='last')
+    elif sort_by == 'Tipo':
+        filtered_clients = filtered_clients.sort_values('tipo_cliente', ascending=True, na_position='last')
+    elif sort_by == 'Región':
+        filtered_clients = filtered_clients.sort_values('region', ascending=True, na_position='last')
     
     # Verificar si hay resultados
     if filtered_clients.empty:
@@ -144,8 +179,8 @@ def show_clients_gallery():
         st.info("""
         **Sugerencias:**
         - Intenta con términos de búsqueda más generales
-        - Revisa los filtros seleccionados (CSR, Vendedor)
-        - Usa el botón 'Limpiar' para resetear la búsqueda
+        - Revisa los filtros seleccionados (CSR, Vendedor, Tipo, Región)
+        - Usa el botón 'Limpiar Filtros' para resetear todos los filtros
         """)
         return
     
@@ -280,6 +315,8 @@ def show_clients_gallery_view(clients_to_show):
                     <p style="margin: 5px 0; font-size: 14px;"><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
                     <p style="margin: 5px 0; font-size: 14px;"><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
                     <p style="margin: 5px 0; font-size: 14px;"><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
+                    <p style="margin: 5px 0; font-size: 14px;"><strong>Tipo:</strong> {client.get('tipo_cliente', 'N/A') or 'N/A'}</p>
+                    <p style="margin: 5px 0; font-size: 14px;"><strong>Región:</strong> {client.get('region', 'N/A') or 'N/A'}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -345,13 +382,15 @@ def show_clients_list_view(clients_to_show):
             'Código WE': client['codigo_we'] or 'N/A',
             'CSR': client['csr'] or 'N/A',
             'Vendedor': client['vendedor'] or 'N/A',
+            'Tipo Cliente': client.get('tipo_cliente', 'N/A') or 'N/A',
+            'Región': client.get('region', 'N/A') or 'N/A',
             'ID': client['id']
         })
     
     # Mostrar tabla
     for i, client_data in enumerate(display_data):
         with st.container():
-            col1, col2, col3, col4, col5, col6 = st.columns([3, 2, 2, 2, 2, 1])
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1])
             
             with col1:
                 st.markdown(f"**{client_data['Nombre']}**")
@@ -369,6 +408,12 @@ def show_clients_list_view(clients_to_show):
                 st.write(f"Vendedor: {client_data['Vendedor']}")
             
             with col6:
+                st.write(f"Tipo: {client_data['Tipo Cliente']}")
+            
+            with col7:
+                st.write(f"Región: {client_data['Región']}")
+            
+            with col8:
                 if st.button("Ver", key=f"list_detail_{client_data['ID']}", help="Ver detalle"):
                     # Limpiar estados previos
                     for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
@@ -1676,7 +1721,7 @@ def show_client_data_tab_improved(client):
         st.session_state[f'{key_prefix}_just_updated'] = False
     
     # Mostrar campos editables (o de solo lectura)
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     readonly = is_read_only_mode()
     
@@ -1726,6 +1771,40 @@ def show_client_data_tab_improved(client):
             disabled=readonly
         )
     
+    with col3:
+        # Nuevos campos
+        tipos_cliente = get_tipos_cliente()
+        current_tipo = safe_get('tipo_cliente') if current_client is client else current_client.get('tipo_cliente', 'Otro')
+        try:
+            tipo_index = tipos_cliente.index(current_tipo)
+        except ValueError:
+            tipo_index = tipos_cliente.index('Otro')
+        
+        tipo_cliente = st.selectbox(
+            "Tipo de Cliente",
+            tipos_cliente,
+            index=tipo_index,
+            key=f"{key_prefix}_tipo_cliente_input",
+            help="Selecciona el tipo de cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        
+        regiones = get_regiones()
+        current_region = safe_get('region') if current_client is client else current_client.get('region', 'Otro')
+        try:
+            region_index = regiones.index(current_region)
+        except ValueError:
+            region_index = regiones.index('Otro')
+            
+        region = st.selectbox(
+            "Región",
+            regiones,
+            index=region_index,
+            key=f"{key_prefix}_region_input",
+            help="Selecciona la región" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+    
     # Verificar si hay cambios (solo si no estamos en modo readonly)
     has_changes = False
     if not readonly:
@@ -1736,7 +1815,9 @@ def show_client_data_tab_improved(client):
             codigo_we != (original_data.get('codigo_we', '') or '' if hasattr(original_data, 'get') else original_data['codigo_we'] or '') or
             csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
             vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
-            calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '')
+            calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '') or
+            tipo_cliente != (original_data.get('tipo_cliente', 'Otro') if hasattr(original_data, 'get') else original_data.get('tipo_cliente', 'Otro')) or
+            region != (original_data.get('region', 'Otro') if hasattr(original_data, 'get') else original_data.get('region', 'Otro'))
         )
     
     # Mostrar indicador de cambios
@@ -1747,9 +1828,17 @@ def show_client_data_tab_improved(client):
         with st.expander("Ver detalles de los cambios"):
             def get_original_value(field):
                 if hasattr(original_data, 'get'):
-                    return original_data.get(field, '') or ''
+                    value = original_data.get(field, '')
+                    # Manejar valores por defecto para los nuevos campos
+                    if field in ['tipo_cliente', 'region'] and not value:
+                        return 'Otro'
+                    return value or ''
                 else:
-                    return original_data[field] if field in original_data and original_data[field] is not None else ''
+                    value = original_data[field] if field in original_data and original_data[field] is not None else ''
+                    # Manejar valores por defecto para los nuevos campos
+                    if field in ['tipo_cliente', 'region'] and not value:
+                        return 'Otro'
+                    return value
             
             if name != get_original_value('name'):
                 st.write(f"• **Nombre:** '{get_original_value('name')}' → '{name}'")
@@ -1763,6 +1852,10 @@ def show_client_data_tab_improved(client):
                 st.write(f"• **Vendedor:** '{get_original_value('vendedor')}' → '{vendedor}'")
             if calendario_sap != get_original_value('calendario_sap'):
                 st.write(f"• **Calendario SAP:** '{get_original_value('calendario_sap')}' → '{calendario_sap}'")
+            if tipo_cliente != get_original_value('tipo_cliente'):
+                st.write(f"• **Tipo Cliente:** '{get_original_value('tipo_cliente')}' → '{tipo_cliente}'")
+            if region != get_original_value('region'):
+                st.write(f"• **Región:** '{get_original_value('region')}' → '{region}'")
     
     # Botones de acción (solo en modo edición)
     if not readonly:
@@ -1777,7 +1870,7 @@ def show_client_data_tab_improved(client):
                     try:
                         with st.spinner("Actualizando cliente..."):
                             # Realizar la actualización
-                            success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap)
+                            success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region)
                         
                         if success:
                             # Establecer flags para mostrar mensaje de éxito y recargar datos
@@ -1787,7 +1880,8 @@ def show_client_data_tab_improved(client):
                             # Limpiar los inputs para que se recarguen con los nuevos valores
                             input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
                                          f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
+                                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
+                                         f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input"]
                             
                             for key in input_keys:
                                 if key in st.session_state:
@@ -1813,7 +1907,8 @@ def show_client_data_tab_improved(client):
                 # Limpiar los keys de input para forzar recarga con valores originales
                 input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
                              f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                             f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
+                             f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
+                             f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input"]
                 
                 for key in input_keys:
                     if key in st.session_state:
@@ -2043,7 +2138,7 @@ def show_add_client():
     with st.form("add_client_form"):
         st.subheader("Información del Cliente")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             name = st.text_input("Nombre del Cliente *", placeholder="Ingresa el nombre completo")
@@ -2054,6 +2149,22 @@ def show_add_client():
             csr = st.text_input("CSR", placeholder="CSR asignado")
             vendedor = st.text_input("Vendedor", placeholder="Vendedor asignado")
             calendario_sap = st.text_input("Calendario SAP", placeholder="Calendario SAP")
+        
+        with col3:
+            # Nuevos campos
+            tipos_cliente = get_tipos_cliente()
+            tipo_cliente = st.selectbox(
+                "Tipo de Cliente *",
+                tipos_cliente,
+                index=tipos_cliente.index("Otro")
+            )
+            
+            regiones = get_regiones()
+            region = st.selectbox(
+                "Región *",
+                regiones,
+                index=regiones.index("Otro")
+            )
         
         st.divider()
         st.subheader("Configuración de Actividades")
@@ -2131,7 +2242,7 @@ def show_add_client():
             if name.strip():
                 with st.spinner("Creando cliente y configurando actividades..."):
                     # Crear cliente
-                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, calendario_sap)
+                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region)
                     
                     if client_id:
                         # Agregar actividades configuradas
