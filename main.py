@@ -56,7 +56,7 @@ def main():
     elif page == "Administrar Frecuencias" and not is_read_only_mode():
         show_manage_frequencies()
     elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias"]:
-        st.error("🚫 Esta función no está disponible en modo producción")
+        st.error("Esta función no está disponible en modo producción")
 
 def initialize_session_state():
     """Inicializa los estados de sesión necesarios"""
