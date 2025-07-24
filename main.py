@@ -7,6 +7,7 @@ from ui_components import (
     show_add_client, 
     show_manage_frequencies
 )
+from dashboard_components import show_dashboard
 from werfen_styles import get_custom_css, get_werfen_header, get_werfen_footer
 
 # Configuración de la página
@@ -59,12 +60,12 @@ def main():
     
     # Navegación usando selectbox (más simple y estable)
     if is_read_only_mode():
-        # Solo mostrar Clientes en producción
-        page_options = ["Clientes"]
-        help_text = "Modo producción - Solo vista de clientes disponible"
+        # Solo mostrar Dashboard y Clientes en producción
+        page_options = ["Dashboard", "Clientes"]
+        help_text = "Modo producción - Solo dashboard y vista de clientes disponible"
     else:
         # Mostrar todas las opciones en desarrollo
-        page_options = ["Clientes", "Agregar Cliente", "Administrar Frecuencias"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias"]
         help_text = "Selecciona la página que deseas ver"
     
     # Selectbox para navegación
@@ -80,11 +81,13 @@ def main():
     
     # Información sobre funciones futuras
     st.sidebar.markdown("### Próximamente")
-    st.sidebar.info("Dashboard con métricas")
     st.sidebar.info("Chat con IA integrada")
+    st.sidebar.info("Exportación avanzada")
     
     # Navegación principal
-    if page == "Clientes":
+    if page == "Dashboard":
+        show_dashboard()
+    elif page == "Clientes":
         show_clients_gallery()
     elif page == "Agregar Cliente" and not is_read_only_mode():
         show_add_client()

@@ -764,13 +764,13 @@ def get_client_card_html(client):
     </div>
     """
 
-def get_metric_card_html(title, value, subtitle=""):
-    """Genera HTML para tarjetas de métricas"""
+def get_metric_card_html(title, value, subtitle="", color="#1f77b4"):
+    """Genera HTML para tarjetas de métricas con el mismo estilo que las tarjetas de clientes"""
     return f"""
-    <div class="metric-card fade-in-up">
-        <h3>{value}</h3>
-        <p>{title}</p>
-        {f'<small>{subtitle}</small>' if subtitle else ''}
+    <div class="client-card fade-in-up" style="text-align: center;">
+        <h3 style="color: {color}; margin: 0 0 15px 0; font-size: 2.5em; font-weight: bold;">{value}</h3>
+        <h4 style="color: var(--werfen-blue); margin: 0 0 8px 0; font-size: 1.1rem; font-weight: 600;">{title}</h4>
+        {f'<p style="margin: 0; font-size: 0.9rem; color: #666;">{subtitle}</p>' if subtitle else ''}
     </div>
     """
 
