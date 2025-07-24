@@ -9,6 +9,98 @@ def get_db_connection():
     db_path = get_database_path()
     return sqlite3.connect(db_path)
 
+def get_sap_calendar_mapping():
+    """Retorna el mapeo de frecuencias a códigos de calendario SAP"""
+    return {
+        "2do Lunes del mes": "16",
+        "1er y 3er Lunes del mes": "M7", 
+        "1er Viernes del mes": "17",
+        "1er y 3er Jueves del mes": "18",
+        "3er Lunes del mes": "19",
+        "2do Martes del mes": "20",
+        "2do y 4to Miércoles del mes": "ME",
+        "1er y 3er Miércoles del mes": "MD",
+        "3er Martes del mes": "21",
+        "2do y 4to Jueves del mes": "22",
+        "1er Miércoles del mes": "23",
+        "2do y 4to Lunes del mes": "24",
+        "Martes de cada semana": "M9",
+        "3er Miércoles del mes": "25",
+        "3er Jueves del mes": "26",
+        "4to Jueves del mes": "27",
+        "2do Miércoles del mes": "28",
+        "1er Martes del mes": "29",
+        "Lunes de cada semana": "M8",
+        "2do Viernes del mes": "30",
+        "1er y 3er Martes del mes": "MB",
+        "4to Viernes del mes": "31",
+        "1er 2do y 3er Lunes del mes": "32",
+        "3er Viernes del mes": "33",
+        "1er y 2do Lunes del mes": "34",
+        "Miércoles de cada semana": "M3",
+        "Jueves de cada semana": "M4",
+        "1er Lunes del mes": "35"
+    }
+
+def update_frequency_sap_codes():
+    """Actualiza los códigos SAP de las frecuencias existentes basándose en el mapeo"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    mapping = get_sap_calendar_mapping()
+    
+    try:
+        for frequency_name, sap_code in mapping.items():
+            cursor.execute('''
+                UPDATE frequency_templates 
+                SET calendario_sap_code = ?
+                WHERE name = ?
+            ''', (sap_code, frequency_name))
+        
+        conn.commit()
+        print("Códigos SAP actualizados para las frecuencias existentes")
+        
+    except Exception as e:
+        print(f"Error actualizando códigos SAP: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def auto_update_client_calendario_sap(client_id, activity_name, frequency_template_id):
+    """Actualiza automáticamente el calendario SAP del cliente cuando se asigna la actividad Albaranado"""
+    if activity_name != "Albaranado":
+        return
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Obtener el código SAP de la frecuencia seleccionada
+        cursor.execute('''
+            SELECT calendario_sap_code FROM frequency_templates 
+            WHERE id = ?
+        ''', (frequency_template_id,))
+        
+        result = cursor.fetchone()
+        if result:
+            sap_code = result[0] or "0"
+            
+            # Actualizar el campo calendario_sap del cliente
+            cursor.execute('''
+                UPDATE clients 
+                SET calendario_sap = ?
+                WHERE id = ?
+            ''', (sap_code, client_id))
+            
+            conn.commit()
+            print(f"Calendario SAP del cliente {client_id} actualizado automáticamente a: {sap_code}")
+            
+    except Exception as e:
+        print(f"Error actualizando calendario SAP automáticamente: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 def init_database():
     """Inicializa la base de datos y crea las tablas necesarias"""
     db_path = get_database_path()
@@ -31,9 +123,24 @@ def init_database():
             csr TEXT,
             vendedor TEXT,
             calendario_sap TEXT,
+            tipo_cliente TEXT DEFAULT 'Otro',
+            region TEXT DEFAULT 'Otro',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Verificar si los campos tipo_cliente y region existen, si no, agregarlos
+    cursor.execute("PRAGMA table_info(clients)")
+    columns_info = cursor.fetchall()
+    column_names = [col[1] for col in columns_info]
+    
+    if 'tipo_cliente' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN tipo_cliente TEXT DEFAULT "Otro"')
+        print("Campo tipo_cliente agregado a clients")
+        
+    if 'region' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN region TEXT DEFAULT "Otro"')
+        print("Campo region agregado a clients")
     
     # Tabla de frecuencias disponibles
     cursor.execute('''
@@ -42,9 +149,19 @@ def init_database():
             name TEXT NOT NULL,
             frequency_type TEXT NOT NULL,
             frequency_config TEXT,
-            description TEXT
+            description TEXT,
+            calendario_sap_code TEXT DEFAULT '0'
         )
     ''')
+    
+    # Verificar si el campo calendario_sap_code existe, si no, agregarlo
+    cursor.execute("PRAGMA table_info(frequency_templates)")
+    columns_info = cursor.fetchall()
+    column_names = [col[1] for col in columns_info]
+    
+    if 'calendario_sap_code' not in column_names:
+        cursor.execute('ALTER TABLE frequency_templates ADD COLUMN calendario_sap_code TEXT DEFAULT "0"')
+        print("Campo calendario_sap_code agregado a frequency_templates")
     
     # Tabla de actividades por cliente
     cursor.execute('''
@@ -114,6 +231,10 @@ def init_database():
                     continue
     
     conn.commit()
+    
+    # Actualizar códigos SAP de frecuencias existentes
+    update_frequency_sap_codes()
+    
     conn.close()
 
 # === FUNCIONES DE CLIENTES ===
@@ -306,12 +427,18 @@ def add_frequency_template(name, frequency_type, frequency_config, description):
     """Agrega una nueva plantilla de frecuencia"""
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Obtener código SAP automáticamente basado en el nombre
+    mapping = get_sap_calendar_mapping()
+    calendario_sap_code = mapping.get(name, "0")
+    
     try:
         cursor.execute('''
-            INSERT INTO frequency_templates (name, frequency_type, frequency_config, description)
-            VALUES (?, ?, ?, ?)
-        ''', (name, frequency_type, frequency_config, description))
+            INSERT INTO frequency_templates (name, frequency_type, frequency_config, description, calendario_sap_code)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (name, frequency_type, frequency_config, description, calendario_sap_code))
         conn.commit()
+        print(f"Frecuencia '{name}' creada con código SAP: {calendario_sap_code}")
         return True
     except Exception as e:
         print(f"Error agregando frecuencia: {e}")
@@ -325,15 +452,19 @@ def update_frequency_template(template_id, name, frequency_type, frequency_confi
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Obtener código SAP automáticamente basado en el nombre
+    mapping = get_sap_calendar_mapping()
+    calendario_sap_code = mapping.get(name, "0")
+    
     try:
         cursor.execute('''
             UPDATE frequency_templates 
-            SET name = ?, frequency_type = ?, frequency_config = ?, description = ?
+            SET name = ?, frequency_type = ?, frequency_config = ?, description = ?, calendario_sap_code = ?
             WHERE id = ?
-        ''', (name, frequency_type, frequency_config, description, template_id))
+        ''', (name, frequency_type, frequency_config, description, calendario_sap_code, template_id))
         
         conn.commit()
-        print(f"Frecuencia '{name}' actualizada exitosamente")
+        print(f"Frecuencia '{name}' actualizada exitosamente con código SAP: {calendario_sap_code}")
         return True
     except Exception as e:
         print(f"Error actualizando frecuencia: {e}")
@@ -399,7 +530,7 @@ def get_client_activities(client_id):
     conn = get_db_connection()
     try:
         activities = pd.read_sql_query('''
-            SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config
+            SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
             FROM client_activities ca
             JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
             WHERE ca.client_id = ?
@@ -448,6 +579,10 @@ def create_default_activities(client_id):
                     VALUES (?, ?, ?)
                 ''', (client_id, activity_name, freq_id))
                 print(f"Creada actividad: {activity_name} para cliente {client_id}")
+                
+                # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
+                if activity_name == "Albaranado":
+                    auto_update_client_calendario_sap(client_id, activity_name, freq_id)
         
         conn.commit()
     except Exception as e:
@@ -469,6 +604,10 @@ def update_client_activity_frequency(client_id, activity_name, frequency_templat
         
         conn.commit()
         print(f"Frecuencia actualizada para {activity_name}")
+        
+        # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
+        auto_update_client_calendario_sap(client_id, activity_name, frequency_template_id)
+        
         return True
     except Exception as e:
         print(f"Error actualizando frecuencia: {e}")
@@ -490,6 +629,10 @@ def add_client_activity(client_id, activity_name, frequency_template_id):
         
         conn.commit()
         print(f"Actividad {activity_name} agregada al cliente {client_id}")
+        
+        # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
+        auto_update_client_calendario_sap(client_id, activity_name, frequency_template_id)
+        
         return True
     except Exception as e:
         print(f"Error agregando actividad: {e}")
