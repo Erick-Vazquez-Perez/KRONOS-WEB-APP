@@ -17,6 +17,108 @@ def get_custom_css():
         --werfen-orange-dark: #c66619;
         --werfen-gray: #f5f5f5;
         --werfen-gray-dark: #e0e0e0;
+        --werfen-white: #ffffff;
+    }
+
+    /* ========== BOTONES DE NAVEGACIÓN SIDEBAR ========== */
+    /* Forzar estilos con máxima especificidad para sobreescribir Streamlit */
+    .stApp section[data-testid="stSidebar"] .stButton > button,
+    div[data-testid="stSidebar"] .stButton > button,
+    section[data-testid="stSidebar"] .stButton > button,
+    .stSidebar .stButton > button {
+        all: unset !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 55px !important;
+        margin: 10px 0 !important;
+        padding: 15px 20px !important;
+        border-radius: 12px !important;
+        border: 2px solid var(--werfen-gray-dark) !important;
+        background: linear-gradient(135deg, var(--werfen-white) 0%, var(--werfen-gray) 100%) !important;
+        color: var(--werfen-blue) !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
+        text-align: center !important;
+        text-decoration: none !important;
+        text-transform: none !important;
+        letter-spacing: 0.8px !important;
+        line-height: 1.2 !important;
+        cursor: pointer !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* Hover effect para navegación */
+    .stApp section[data-testid="stSidebar"] .stButton > button:hover,
+    div[data-testid="stSidebar"] .stButton > button:hover,
+    section[data-testid="stSidebar"] .stButton > button:hover,
+    .stSidebar .stButton > button:hover {
+        background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%) !important;
+        color: var(--werfen-white) !important;
+        border-color: var(--werfen-blue) !important;
+        transform: translateY(-4px) !important;
+        box-shadow: 0 12px 30px rgba(6, 3, 141, 0.4) !important;
+    }
+    
+    /* Estado activo/focus para navegación */
+    .stApp section[data-testid="stSidebar"] .stButton > button:active,
+    .stApp section[data-testid="stSidebar"] .stButton > button:focus,
+    div[data-testid="stSidebar"] .stButton > button:active,
+    div[data-testid="stSidebar"] .stButton > button:focus,
+    section[data-testid="stSidebar"] .stButton > button:active,
+    section[data-testid="stSidebar"] .stButton > button:focus,
+    .stSidebar .stButton > button:active,
+    .stSidebar .stButton > button:focus {
+        background: linear-gradient(135deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
+        color: var(--werfen-white) !important;
+        border-color: var(--werfen-orange) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 20px rgba(232, 119, 33, 0.4) !important;
+        outline: none !important;
+    }
+    
+    /* Estado deshabilitado para navegación */
+    .stApp section[data-testid="stSidebar"] .stButton > button:disabled,
+    div[data-testid="stSidebar"] .stButton > button:disabled,
+    section[data-testid="stSidebar"] .stButton > button:disabled,
+    .stSidebar .stButton > button:disabled {
+        background: linear-gradient(135deg, var(--werfen-gray-dark) 0%, #bbb 100%) !important;
+        color: #888 !important;
+        border-color: var(--werfen-gray-dark) !important;
+        opacity: 0.7 !important;
+        cursor: not-allowed !important;
+        transform: none !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    .stApp section[data-testid="stSidebar"] .stButton > button:disabled:hover,
+    div[data-testid="stSidebar"] .stButton > button:disabled:hover,
+    section[data-testid="stSidebar"] .stButton > button:disabled:hover,
+    .stSidebar .stButton > button:disabled:hover {
+        transform: none !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        background: linear-gradient(135deg, var(--werfen-gray-dark) 0%, #bbb 100%) !important;
+    }
+    
+    /* Botón activo (página actual) */
+    .nav-active .stButton > button {
+        background: linear-gradient(135deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
+        color: var(--werfen-white) !important;
+        border-color: var(--werfen-orange) !important;
+        box-shadow: 0 8px 20px rgba(232, 119, 33, 0.3) !important;
+        transform: translateY(-2px) !important;
+    }
+    
+    /* Remover estilos conflictivos de Streamlit */
+    .stButton > button[kind="secondary"],
+    .stButton > button[kind="primary"] {
+        all: unset !important;
     }
 
     /* ========== HEADER Y NAVEGACIÓN ========== */
@@ -40,6 +142,35 @@ def get_custom_css():
     .css-1d391kg {
         background-color: var(--werfen-gray);
         border-right: 3px solid var(--werfen-blue);
+    }
+
+    /* Espaciado mejorado en sidebar */
+    div[data-testid="stSidebar"] hr {
+        margin: 25px 0 !important;
+        border: 1px solid var(--werfen-orange) !important;
+        border-radius: 2px !important;
+        background: linear-gradient(90deg, var(--werfen-blue) 0%, var(--werfen-orange) 100%) !important;
+        height: 2px !important;
+    }
+    
+    /* Títulos de sección personalizados en sidebar */
+    div[data-testid="stSidebar"] h3 {
+        color: var(--werfen-blue) !important;
+        font-weight: 800 !important;
+        margin: 25px 0 20px 0 !important;
+        font-size: 18px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+        text-align: center !important;
+        padding: 10px 0 !important;
+        border-bottom: 2px solid var(--werfen-orange) !important;
+        background: linear-gradient(135deg, var(--werfen-gray) 0%, var(--werfen-white) 100%) !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Estilo para contenedores de botones en sidebar */
+    .stButton {
+        margin-bottom: 12px !important;
     }
 
     /* ========== BOTONES PRINCIPALES ========== */
@@ -565,6 +696,117 @@ def get_custom_css():
         display: none !important;
     }
     </style>
+    
+    <script>
+    // Forzar reestilizado después de que Streamlit cargue
+    setTimeout(function() {
+        const buttons = document.querySelectorAll('div[data-testid="stSidebar"] .stButton > button');
+        buttons.forEach(button => {
+            // Forzar estilos directamente
+            button.style.cssText = `
+                all: unset !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 100% !important;
+                height: 55px !important;
+                margin: 10px 0 !important;
+                padding: 15px 20px !important;
+                border-radius: 12px !important;
+                border: 2px solid #e0e0e0 !important;
+                background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%) !important;
+                color: #06038D !important;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                font-weight: 700 !important;
+                font-size: 16px !important;
+                text-align: center !important;
+                cursor: pointer !important;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
+                box-sizing: border-box !important;
+                letter-spacing: 0.8px !important;
+            `;
+            
+            // Agregar eventos de hover
+            button.addEventListener('mouseenter', function() {
+                if (!this.disabled) {
+                    this.style.background = 'linear-gradient(135deg, #06038D 0%, #1a17a3 100%)';
+                    this.style.color = '#ffffff';
+                    this.style.borderColor = '#06038D';
+                    this.style.transform = 'translateY(-4px)';
+                    this.style.boxShadow = '0 12px 30px rgba(6, 3, 141, 0.4)';
+                }
+            });
+            
+            button.addEventListener('mouseleave', function() {
+                if (!this.disabled && !this.closest('.nav-active')) {
+                    this.style.background = 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)';
+                    this.style.color = '#06038D';
+                    this.style.borderColor = '#e0e0e0';
+                    this.style.transform = 'translateY(0px)';
+                    this.style.boxShadow = '0 4px 8px rgba(6, 3, 141, 0.2)';
+                }
+            });
+        });
+        
+        // Aplicar estilos a botones activos
+        const activeButtons = document.querySelectorAll('.nav-active .stButton > button');
+        activeButtons.forEach(button => {
+            button.style.background = 'linear-gradient(135deg, #E87721 0%, #ff8c3d 100%)';
+            button.style.color = '#ffffff';
+            button.style.borderColor = '#E87721';
+            button.style.boxShadow = '0 8px 20px rgba(232, 119, 33, 0.3)';
+            button.style.transform = 'translateY(-2px)';
+        });
+    }, 200);
+    
+    // Re-aplicar estilos cada vez que Streamlit re-renderiza
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList') {
+                setTimeout(function() {
+                    const buttons = document.querySelectorAll('div[data-testid="stSidebar"] .stButton > button');
+                    buttons.forEach(button => {
+                        if (!button.hasAttribute('data-styled')) {
+                            button.style.cssText = `
+                                all: unset !important;
+                                display: flex !important;
+                                align-items: center !important;
+                                justify-content: center !important;
+                                width: 100% !important;
+                                height: 55px !important;
+                                margin: 10px 0 !important;
+                                padding: 15px 20px !important;
+                                border-radius: 12px !important;
+                                border: 2px solid #e0e0e0 !important;
+                                background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%) !important;
+                                color: #06038D !important;
+                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                                font-weight: 700 !important;
+                                font-size: 16px !important;
+                                text-align: center !important;
+                                cursor: pointer !important;
+                                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                                box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
+                                box-sizing: border-box !important;
+                                letter-spacing: 0.8px !important;
+                            `;
+                            button.setAttribute('data-styled', 'true');
+                        }
+                    });
+                }, 100);
+            }
+        });
+    });
+    
+    // Observar cambios en la sidebar
+    setTimeout(function() {
+        const sidebar = document.querySelector('div[data-testid="stSidebar"]');
+        if (sidebar) {
+            observer.observe(sidebar, { childList: true, subtree: true });
+        }
+    }, 500);
+    </script>
     """
 
 def get_werfen_header():

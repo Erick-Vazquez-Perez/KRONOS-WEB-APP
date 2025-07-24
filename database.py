@@ -423,14 +423,17 @@ def get_frequency_templates():
     conn.close()
     return templates
 
-def add_frequency_template(name, frequency_type, frequency_config, description):
+def add_frequency_template(name, frequency_type, frequency_config, description, manual_sap_code=None):
     """Agrega una nueva plantilla de frecuencia"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Obtener código SAP automáticamente basado en el nombre
-    mapping = get_sap_calendar_mapping()
-    calendario_sap_code = mapping.get(name, "0")
+    # Usar código SAP manual si se proporciona, sino obtener automáticamente basado en el nombre
+    if manual_sap_code is not None:
+        calendario_sap_code = manual_sap_code.strip() if manual_sap_code.strip() else "0"
+    else:
+        mapping = get_sap_calendar_mapping()
+        calendario_sap_code = mapping.get(name, "0")
     
     try:
         cursor.execute('''
@@ -447,14 +450,17 @@ def add_frequency_template(name, frequency_type, frequency_config, description):
     finally:
         conn.close()
 
-def update_frequency_template(template_id, name, frequency_type, frequency_config, description):
+def update_frequency_template(template_id, name, frequency_type, frequency_config, description, manual_sap_code=None):
     """Actualiza una plantilla de frecuencia existente"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Obtener código SAP automáticamente basado en el nombre
-    mapping = get_sap_calendar_mapping()
-    calendario_sap_code = mapping.get(name, "0")
+    # Usar código SAP manual si se proporciona, sino obtener automáticamente basado en el nombre
+    if manual_sap_code is not None:
+        calendario_sap_code = manual_sap_code.strip() if manual_sap_code.strip() else "0"
+    else:
+        mapping = get_sap_calendar_mapping()
+        calendario_sap_code = mapping.get(name, "0")
     
     try:
         cursor.execute('''

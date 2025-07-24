@@ -57,19 +57,62 @@ def main():
     """.format(get_logo_base64()), unsafe_allow_html=True)
     st.sidebar.markdown("---")  # Línea separadora
     
-    # Configurar opciones según el entorno
-    if is_read_only_mode():
-        # Solo mostrar opciones de lectura en producción
-        page_options = ["Clientes"]
-    else:
-        # Mostrar todas las opciones en desarrollo
-        page_options = [
-            "Clientes",
-            "Agregar Cliente", 
-            "Administrar Frecuencias"
-        ]
+    # Inicializar el estado de la página si no existe
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "Clientes"
     
-    page = st.sidebar.selectbox("Selecciona una opción", page_options)
+    # Función auxiliar para crear botones con indicador de estado activo
+    def nav_button(label, key, disabled=False):
+        is_active = st.session_state.current_page == label
+        
+        # Crear contenedor con clase CSS condicional para botón activo
+        if is_active:
+            st.sidebar.markdown('<div class="nav-active">', unsafe_allow_html=True)
+        
+        button_clicked = st.sidebar.button(
+            label,
+            key=key,
+            disabled=disabled,
+            use_container_width=True
+        )
+        
+        if is_active:
+            st.sidebar.markdown('</div>', unsafe_allow_html=True)
+        
+        return button_clicked
+    
+    # Botón Clientes
+    if nav_button("Clientes", "nav_clients"):
+        st.session_state.current_page = "Clientes"
+        st.rerun()
+    
+    # Botones adicionales solo en modo desarrollo
+    if not is_read_only_mode():
+        # Botón Agregar Cliente
+        if nav_button("Agregar Cliente", "nav_add_client"):
+            st.session_state.current_page = "Agregar Cliente"
+            st.rerun()
+        
+        # Botón Administrar Frecuencias
+        if nav_button("Administrar Frecuencias", "nav_frequencies"):
+            st.session_state.current_page = "Administrar Frecuencias"
+            st.rerun()
+    
+    st.sidebar.markdown("---")  # Línea separadora
+    
+    # Nuevos botones para funciones futuras
+    st.sidebar.markdown("### Próximamente")
+    
+    # Botón Dashboard
+    if nav_button("Dashboard", "nav_dashboard", disabled=True):
+        st.sidebar.info("Dashboard estará disponible próximamente con métricas y gráficos interactivos.")
+    
+    # Botón Chat IA  
+    if nav_button("Chat con IA", "nav_chat", disabled=True):
+        st.sidebar.info("Chat con IA estará disponible próximamente para ayudarte con consultas inteligentes.")
+    
+    # Usar el estado para determinar qué página mostrar
+    page = st.session_state.current_page
     
     # Navegación principal
     if page == "Clientes":

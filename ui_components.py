@@ -221,8 +221,14 @@ def show_clients_gallery():
             help="Selecciona cómo mostrar los clientes"
         )
     
-    st.divider()
+    # Mostrar nombre del mes actual debajo del selector de vista
+    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    current_month_name = months[datetime.now().month - 1]
+    st.markdown(f"#### Mostrando fechas de {current_month_name} {datetime.now().year}")
     
+    st.divider()
+
     # Mostrar clientes según la vista seleccionada
     if view_mode == "Lista":
         show_clients_list_view(clients_to_show)
@@ -304,61 +310,55 @@ def get_client_current_month_data(client_id):
 
 def show_clients_gallery_view(clients_to_show):
     """Muestra los clientes en vista de galería (tarjetas)"""
-    # Mostrar galería de clientes
-    cols = st.columns(3)
     
-    for idx, (_, client) in enumerate(clients_to_show.iterrows()):
-        with cols[idx % 3]:
-            with st.container():
-                # Usar el HTML personalizado de Werfen
-                st.markdown(get_client_card_html(client), unsafe_allow_html=True)
-                
-                # Mostrar vista del mes actual
-                try:
-                    current_month_df = get_client_current_month_data(client['id'])
-                    if current_month_df is not None and not current_month_df.empty:
-                        # Obtener nombre del mes actual
-                        months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-                        current_month_name = months[datetime.now().month - 1]
-                        
-                        st.markdown(f"{current_month_name}")
-                        # Calcular altura dinámica basada en número de filas
-                        num_rows = len(current_month_df)
-                        dynamic_height = min(max(num_rows * 35 + 60, 150), 400)  # Altura entre 150 y 400px
-                        
-                        st.dataframe(
-                            current_month_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=dynamic_height,
-                            column_config={
-                                'Actividad': st.column_config.TextColumn(
-                                    'Actividad',
-                                    width='medium'
-                                )
-                            }
-                        )
-                    else:
-                        current_month_name = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                                            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][datetime.now().month - 1]
-                        st.markdown(f"{current_month_name}")
-                        st.write("Sin actividades este mes")
-                except Exception as e:
-                    st.write("Sin calendario configurado")
-                
-                # Botón para ver detalle
-                if st.button(f"Ver Detalle", key=f"detail_{client['id']}"):
-                    # Limpiar estados previos
-                    for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
-                              'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
-                        if key in st.session_state:
-                            del st.session_state[key]
+    # Crear contenedor scrolleable con altura fija
+    with st.container(height=600):
+        # Mostrar galería de clientes
+        cols = st.columns(3)
+        
+        for idx, (_, client) in enumerate(clients_to_show.iterrows()):
+            with cols[idx % 3]:
+                with st.container():
+                    # Usar el HTML personalizado de Werfen
+                    st.markdown(get_client_card_html(client), unsafe_allow_html=True)
                     
-                    # Establecer nuevo cliente
-                    st.session_state.selected_client = int(client['id'])
-                    st.session_state.show_client_detail = True
-                    st.rerun()
+                    # Mostrar vista del mes actual (datos solamente, sin título del mes)
+                    try:
+                        current_month_df = get_client_current_month_data(client['id'])
+                        if current_month_df is not None and not current_month_df.empty:
+                            # Calcular altura dinámica basada en número de filas
+                            num_rows = len(current_month_df)
+                            dynamic_height = min(max(num_rows * 35 + 60, 150), 250)  # Altura entre 150 y 250px (más reducida)
+                            
+                            st.dataframe(
+                                current_month_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=dynamic_height,
+                                column_config={
+                                    'Actividad': st.column_config.TextColumn(
+                                        'Actividad',
+                                        width='medium'
+                                    )
+                                }
+                            )
+                        else:
+                            st.write("Sin actividades este mes")
+                    except Exception as e:
+                        st.write("Sin calendario configurado")
+                    
+                    # Botón para ver detalle
+                    if st.button(f"Ver Detalle", key=f"detail_{client['id']}"):
+                        # Limpiar estados previos
+                        for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
+                                  'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
+                        # Establecer nuevo cliente
+                        st.session_state.selected_client = int(client['id'])
+                        st.session_state.show_client_detail = True
+                        st.rerun()
 
 def show_clients_list_view(clients_to_show):
     """Muestra los clientes en vista de lista (tabla)"""
@@ -2166,7 +2166,12 @@ def show_add_client():
         with col2:
             csr = st.text_input("CSR", placeholder="CSR asignado")
             vendedor = st.text_input("Vendedor", placeholder="Vendedor asignado")
-            calendario_sap = st.text_input("Calendario SAP", placeholder="Calendario SAP")
+            calendario_sap = st.text_input(
+                "Calendario SAP", 
+                placeholder="Se asigna automáticamente",
+                disabled=True,
+                help="Este campo se establece automáticamente basado en la frecuencia seleccionada para la actividad 'Albaranado'"
+            )
         
         with col3:
             # Nuevos campos
@@ -2190,6 +2195,7 @@ def show_add_client():
         
         # Lista de actividades a configurar
         activities_config = []
+        albaranado_sap_code = "0"  # Código SAP por defecto
         
         # Actividades predeterminadas (orden correcto sin Embarque)
         default_activities = ["Fecha envío OC", "Albaranado", "Fecha Entrega"]
@@ -2214,9 +2220,22 @@ def show_add_client():
                 selected_template = frequency_templates[frequency_templates['name'] == selected_freq].iloc[0]
                 desc = format_frequency_description(selected_template['frequency_type'], selected_template['frequency_config'])
                 st.info(f"{desc}")
+                
+                # Si es Albaranado, obtener el código SAP para mostrar
+                if activity == "Albaranado":
+                    albaranado_sap_code = selected_template.get('calendario_sap_code', '0')
             
             selected_freq_id = freq_ids[freq_options.index(selected_freq)]
             activities_config.append((activity, selected_freq_id))
+        
+        # Mostrar el código SAP que se asignará automáticamente
+        st.subheader("Calendario SAP Automático")
+        if albaranado_sap_code and albaranado_sap_code != '0':
+            st.success(f"**Calendario SAP que se asignará:** {albaranado_sap_code}")
+            st.info("Este código se basa en la frecuencia seleccionada para la actividad 'Albaranado'")
+        else:
+            st.warning("**Calendario SAP:** Sin Calendario")
+            st.info("La frecuencia seleccionada para 'Albaranado' no tiene un código SAP asignado")
         
         st.divider()
         
@@ -2259,8 +2278,8 @@ def show_add_client():
         if submitted:
             if name.strip():
                 with st.spinner("Creando cliente y configurando actividades..."):
-                    # Crear cliente
-                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region)
+                    # Crear cliente usando el código SAP automático de Albaranado
+                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, albaranado_sap_code, tipo_cliente, region)
                     
                     if client_id:
                         # Agregar actividades configuradas
@@ -2349,13 +2368,63 @@ def show_manage_frequencies():
     if 'editing_frequency' not in st.session_state:
         st.session_state.editing_frequency = None
     
-    # Mostrar frecuencias existentes en tabla editable
-    st.subheader("Frecuencias Disponibles")
-    
+    # Obtener todas las frecuencias
     templates = get_frequency_templates()
     
-    if not templates.empty:
-        show_frequency_list(templates)
+    if templates.empty:
+        st.info("No hay frecuencias registradas. Agrega una frecuencia para comenzar.")
+        show_add_frequency_form()
+        return
+    
+    # Barra de búsqueda
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        search_term = st.text_input(
+            "Buscar frecuencias por nombre o descripción:",
+            placeholder="Ingresa tu búsqueda...",
+            key="frequency_search",
+            help="Busca frecuencias por nombre o descripción"
+        )
+    
+    with col2:
+        if st.button("Limpiar", key="clear_frequency_search", help="Limpiar búsqueda"):
+            if "frequency_search" in st.session_state:
+                del st.session_state["frequency_search"]
+            st.rerun()
+    
+    # Filtrar frecuencias basado en el término de búsqueda
+    filtered_templates = templates.copy()
+    
+    if search_term and search_term.strip():
+        filtered_templates = filtered_templates[
+            filtered_templates['name'].str.contains(search_term, case=False, na=False) |
+            filtered_templates['description'].str.contains(search_term, case=False, na=False)
+        ]
+    
+    # Mostrar información de resultados
+    total_frequencies = len(templates)
+    shown_frequencies = len(filtered_templates)
+    
+    if shown_frequencies == total_frequencies:
+        st.info(f"Mostrando todas las frecuencias ({total_frequencies} total)")
+    else:
+        st.info(f"Mostrando {shown_frequencies} de {total_frequencies} frecuencias")
+        if search_term:
+            st.caption(f"Filtro activo: '{search_term}'")
+    
+    # Mostrar frecuencias existentes en contenedor scrolleable
+    st.subheader("Frecuencias Disponibles")
+    
+    if not filtered_templates.empty:
+        # Crear contenedor scrolleable con altura fija
+        with st.container(height=500):
+            show_frequency_list(filtered_templates)
+    else:
+        st.warning("No se encontraron frecuencias que coincidan con la búsqueda")
+        st.info("Intenta con términos de búsqueda más generales")
+    
+    st.divider()
     
     # Solo mostrar el formulario de agregar si no estamos editando
     if st.session_state.editing_frequency is None:
@@ -2387,6 +2456,13 @@ def show_frequency_view(template):
         # Mostrar configuración legible
         config_text = format_frequency_description(template['frequency_type'], template['frequency_config'])
         st.write(f"**Tipo:** {config_text}")
+        
+        # Mostrar calendario SAP
+        sap_code = template.get('calendario_sap_code', '0')
+        if sap_code and sap_code != '0':
+            st.write(f"**Calendario SAP:** {sap_code}")
+        else:
+            st.write("**Calendario SAP:** Sin Calendario")
         
         # Mostrar uso
         usage_count = get_frequency_usage_count(template['id'])
@@ -2431,6 +2507,15 @@ def show_frequency_edit_form(template):
         with col1:
             edit_name = st.text_input("Nombre:", value=template['name'])
             edit_description = st.text_area("Descripción:", value=template['description'] or "")
+            
+            # Campo para calendario SAP
+            current_sap_code = template.get('calendario_sap_code', '0')
+            edit_sap_code = st.text_input(
+                "Código Calendario SAP:",
+                value=current_sap_code if current_sap_code != '0' else '',
+                placeholder="Ej: 16, M7, 17, etc.",
+                help="Deja vacío para 'Sin Calendario' o ingresa el código SAP correspondiente"
+            )
         
         with col2:
             edit_freq_type = st.selectbox(
@@ -2454,7 +2539,8 @@ def show_frequency_edit_form(template):
                         edit_name.strip(), 
                         edit_freq_type, 
                         edit_freq_config, 
-                        edit_description
+                        edit_description,
+                        edit_sap_code  # Pasar el código SAP manual
                     ):
                         st.success(f"Frecuencia '{edit_name}' actualizada exitosamente")
                         st.session_state.editing_frequency = None
@@ -2462,6 +2548,7 @@ def show_frequency_edit_form(template):
                     else:
                         st.error("Error al actualizar la frecuencia")
                 else:
+                    st.error("El nombre y la configuración son obligatorios")
                     st.error("Completa todos los campos obligatorios")
         
         with col2:
@@ -2486,6 +2573,9 @@ def show_frequency_config_inputs(freq_type, current_config_json):
         col1, col2 = st.columns(2)
         with col1:
             current_weekday = current_config.get('weekday', 0)
+            # Asegurar que el índice esté dentro del rango válido
+            if current_weekday < 0 or current_weekday >= 7:
+                current_weekday = 0
             weekday_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
             edit_weekday = st.selectbox(
                 "Día de la semana:",
@@ -2494,10 +2584,15 @@ def show_frequency_config_inputs(freq_type, current_config_json):
             )
         with col2:
             current_weeks = current_config.get('weeks', [1])
+            # Filtrar solo valores válidos para el multiselect
+            valid_weeks = [week for week in current_weeks if week in [1, 2, 3, 4]]
+            if not valid_weeks:
+                valid_weeks = [1]  # valor por defecto si no hay válidos
+                
             edit_weeks = st.multiselect(
                 "Semanas del mes:",
                 [1, 2, 3, 4],
-                default=current_weeks
+                default=valid_weeks
             )
         
         if edit_weeks:
@@ -2508,10 +2603,15 @@ def show_frequency_config_inputs(freq_type, current_config_json):
     
     elif freq_type == "specific_days":
         current_days = current_config.get('days', [1])
+        # Filtrar solo valores válidos para el multiselect
+        valid_days = [day for day in current_days if day in range(1, 32)]
+        if not valid_days:
+            valid_days = [1]  # valor por defecto si no hay válidos
+            
         edit_days = st.multiselect(
             "Días del mes:",
             list(range(1, 32)),
-            default=current_days
+            default=valid_days
         )
         
         if edit_days:
@@ -2538,6 +2638,13 @@ def show_add_frequency_form():
         
         with col2:
             description = st.text_area("Descripción", placeholder="Describe cuándo ocurre esta frecuencia")
+            
+            # Campo para calendario SAP
+            sap_code = st.text_input(
+                "Código Calendario SAP:",
+                placeholder="Ej: 16, M7, 17, etc.",
+                help="Deja vacío para 'Sin Calendario' o ingresa el código SAP correspondiente"
+            )
         
         if freq_type == "nth_weekday":
             col1, col2 = st.columns(2)
@@ -2575,7 +2682,7 @@ def show_add_frequency_form():
         
         if submitted:
             if freq_name.strip() and freq_config:
-                if add_frequency_template(freq_name.strip(), freq_type, freq_config, description):
+                if add_frequency_template(freq_name.strip(), freq_type, freq_config, description, sap_code):
                     st.success(f"Frecuencia '{freq_name}' agregada exitosamente")
                     st.rerun()
                 else:
