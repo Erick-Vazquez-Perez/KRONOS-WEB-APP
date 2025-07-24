@@ -775,7 +775,20 @@ def show_monthly_readonly_calendar(client_id, selected_month):
     
     # Mostrar información resumen del mes
     total_dates_month = len(month_dates)
-    activities_list = list(set([d['activity_name'] for d in month_dates]))
+    # Ordenar actividades según el orden específico
+    activity_order = ['Fecha envío OC', 'Albaranado', 'Fecha Entrega']
+    all_activities = list(set([d['activity_name'] for d in month_dates]))
+    
+    activities_list = []
+    for activity in activity_order:
+        if activity in all_activities:
+            activities_list.append(activity)
+    
+    # Agregar cualquier actividad adicional que no esté en el orden predefinido
+    for activity in all_activities:
+        if activity not in activity_order:
+            activities_list.append(activity)
+    
     activities_count = len(activities_list)
     
     col1, col2, col3 = st.columns(3)
@@ -1263,8 +1276,20 @@ def prepare_calendar_for_editing(dates_df):
     if dates_df.empty:
         return pd.DataFrame()
     
-    # Crear tabla pivoteada
-    activities = dates_df['activity_name'].unique()
+    # Ordenar actividades según el orden específico requerido
+    activity_order = ['Fecha envío OC', 'Albaranado', 'Fecha Entrega']
+    all_activities = dates_df['activity_name'].unique()
+    
+    # Crear lista ordenada de actividades
+    activities = []
+    for activity in activity_order:
+        if activity in all_activities:
+            activities.append(activity)
+    
+    # Agregar cualquier actividad adicional que no esté en el orden predefinido
+    for activity in all_activities:
+        if activity not in activity_order:
+            activities.append(activity)
     
     # Determinar el número máximo de fechas que tiene cualquier actividad
     max_dates = 0
@@ -2166,8 +2191,8 @@ def show_add_client():
         # Lista de actividades a configurar
         activities_config = []
         
-        # Actividades predeterminadas
-        default_activities = ["Fecha envío OC", "Fecha Entrega", "Albaranado", "Embarque"]
+        # Actividades predeterminadas (orden correcto sin Embarque)
+        default_activities = ["Fecha envío OC", "Albaranado", "Fecha Entrega"]
         
         freq_options = frequency_templates['name'].tolist()
         freq_ids = frequency_templates['id'].tolist()

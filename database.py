@@ -113,24 +113,6 @@ def init_database():
                     print(f"Error restaurando datos: {e}")
                     continue
     
-    # Insertar frecuencias predeterminadas si no existen
-    cursor.execute("SELECT COUNT(*) FROM frequency_templates")
-    if cursor.fetchone()[0] == 0:
-        default_frequencies = [
-            ("1er Lunes", "nth_weekday", '{"weekday": 0, "weeks": [1]}', "Primer lunes de cada mes"),
-            ("1er y 3er Lunes", "nth_weekday", '{"weekday": 0, "weeks": [1, 3]}', "Primer y tercer lunes de cada mes"),
-            ("2do y 4to Martes", "nth_weekday", '{"weekday": 1, "weeks": [2, 4]}', "Segundo y cuarto martes de cada mes"),
-            ("Cada Miércoles", "nth_weekday", '{"weekday": 2, "weeks": [1, 2, 3, 4]}', "Todos los miércoles del mes"),
-            ("Día 1 y 15", "specific_days", '{"days": [1, 15]}', "El 1 y 15 de cada mes"),
-            ("Fin de mes", "specific_days", '{"days": [28, 29, 30, 31]}', "Últimos días del mes"),
-        ]
-        
-        for freq in default_frequencies:
-            cursor.execute('''
-                INSERT INTO frequency_templates (name, frequency_type, frequency_config, description)
-                VALUES (?, ?, ?, ?)
-            ''', freq)
-    
     conn.commit()
     conn.close()
 
@@ -413,7 +395,7 @@ def get_frequency_usage_count(template_id):
 # === FUNCIONES DE ACTIVIDADES ===
 
 def get_client_activities(client_id):
-    """Obtiene las actividades de un cliente"""
+    """Obtiene las actividades de un cliente en orden específico"""
     conn = get_db_connection()
     try:
         activities = pd.read_sql_query('''
@@ -421,6 +403,13 @@ def get_client_activities(client_id):
             FROM client_activities ca
             JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
             WHERE ca.client_id = ?
+            ORDER BY 
+                CASE ca.activity_name
+                    WHEN 'Fecha envío OC' THEN 1
+                    WHEN 'Albaranado' THEN 2
+                    WHEN 'Fecha Entrega' THEN 3
+                    ELSE 4
+                END
         ''', conn, params=(client_id,))
     except Exception as e:
         print(f"Error obteniendo actividades del cliente {client_id}: {e}")
@@ -439,12 +428,11 @@ def create_default_activities(client_id):
         conn.close()
         return
     
-    # Actividades predeterminadas
+    # Actividades predeterminadas en el orden requerido
     default_activities = [
-        ("Fecha envío OC", 1),  # 1er Lunes
-        ("Fecha Entrega", 2),   # 1er y 3er Lunes
-        ("Albaranado", 3),      # 2do y 4to Martes
-        ("Embarque", 4)         # Cada Miércoles
+        ("Fecha envío OC", 1),   # Primera actividad
+        ("Albaranado", 2),       # Segunda actividad
+        ("Fecha Entrega", 3)     # Tercera actividad
     ]
     
     try:
@@ -541,23 +529,39 @@ def delete_client_activity(client_id, activity_name):
 # === FUNCIONES DE FECHAS ===
 
 def get_calculated_dates(client_id):
-    """Obtiene las fechas calculadas para un cliente"""
+    """Obtiene las fechas calculadas para un cliente en orden específico"""
     conn = get_db_connection()
     try:
-        dates = pd.read_sql_query(
-            "SELECT * FROM calculated_dates WHERE client_id = ? ORDER BY activity_name, date_position", 
-            conn, params=(client_id,)
-        )
+        dates = pd.read_sql_query('''
+            SELECT * FROM calculated_dates 
+            WHERE client_id = ? 
+            ORDER BY 
+                CASE activity_name
+                    WHEN 'Fecha envío OC' THEN 1
+                    WHEN 'Albaranado' THEN 2
+                    WHEN 'Fecha Entrega' THEN 3
+                    ELSE 4
+                END, 
+                date_position
+        ''', conn, params=(client_id,))
     except Exception as e:
         conn.close()
         print(f"Error en get_calculated_dates: {e}")
         init_database()
         conn = get_db_connection()
         try:
-            dates = pd.read_sql_query(
-                "SELECT * FROM calculated_dates WHERE client_id = ? ORDER BY activity_name, date_position", 
-                conn, params=(client_id,)
-            )
+            dates = pd.read_sql_query('''
+                SELECT * FROM calculated_dates 
+                WHERE client_id = ? 
+                ORDER BY 
+                    CASE activity_name
+                        WHEN 'Fecha envío OC' THEN 1
+                        WHEN 'Albaranado' THEN 2
+                        WHEN 'Fecha Entrega' THEN 3
+                        ELSE 4
+                    END, 
+                    date_position
+            ''', conn, params=(client_id,))
         except:
             dates = pd.DataFrame()
     

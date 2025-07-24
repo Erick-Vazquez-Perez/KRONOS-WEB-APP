@@ -12,6 +12,7 @@ from werfen_styles import get_custom_css, get_werfen_header, get_werfen_footer
 # Configuración de la página
 st.set_page_config(
     page_title="Kronos - Werfen",
+    page_icon="favicon.ico",
     layout="wide",
     initial_sidebar_state="expanded"
 )
