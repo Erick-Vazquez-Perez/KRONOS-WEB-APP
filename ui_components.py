@@ -2,8 +2,6 @@ import streamlit as st
 import json
 import sqlite3
 import pandas as pd
-import streamlit as st
-import pandas as pd
 from datetime import datetime, timedelta
 from config import is_read_only_mode
 from database import (
@@ -18,6 +16,7 @@ from database import (
 from date_calculator import recalculate_client_dates
 from calendar_utils import create_client_calendar_table, format_frequency_description
 from client_constants import get_tipos_cliente, get_regiones
+from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
 import sqlite3
 
@@ -348,7 +347,7 @@ def show_clients_gallery_view(clients_to_show):
                         st.write("Sin calendario configurado")
                     
                     # Botón para ver detalle
-                    if st.button(f"Ver Detalle", key=f"detail_{client['id']}"):
+                    if st.button("Ver Detalle", key=f"detail_{client['id']}", use_container_width=True):
                         # Limpiar estados previos
                         for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
                                   'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
@@ -407,7 +406,7 @@ def show_clients_list_view(clients_to_show):
                 st.write(f"Región: {client_data['Región']}")
             
             with col8:
-                if st.button("Ver", key=f"list_detail_{client_data['ID']}", help="Ver detalle"):
+                if st.button("Ver", key=f"list_detail_{client_data['ID']}"):
                     # Limpiar estados previos
                     for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
                               'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:

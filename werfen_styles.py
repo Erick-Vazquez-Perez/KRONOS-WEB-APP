@@ -20,107 +20,103 @@ def get_custom_css():
         --werfen-white: #ffffff;
     }
 
-    /* ========== BOTONES DE NAVEGACIÓN SIDEBAR ========== */
-    /* Forzar estilos con máxima especificidad para sobreescribir Streamlit */
-    .stApp section[data-testid="stSidebar"] .stButton > button,
-    div[data-testid="stSidebar"] .stButton > button,
-    section[data-testid="stSidebar"] .stButton > button,
-    .stSidebar .stButton > button {
-        all: unset !important;
-        display: flex !important;
+    /* ========== ESTILOS BÁSICOS DE BOTONES ========== */
+    /* Botones básicos con colores Werfen - Especificidad alta */
+    .stApp .stButton > button,
+    div[data-testid="stAppViewContainer"] .stButton > button {
+        background: var(--werfen-blue) !important;
+        color: white !important;
+        border: 2px solid var(--werfen-blue) !important;
+        border-radius: 8px !important;
+        padding: 0.6rem 1.2rem !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 2px 4px rgba(6, 3, 141, 0.2) !important;
+        min-height: 42px !important;
+        display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        width: 100% !important;
-        height: 55px !important;
-        margin: 10px 0 !important;
-        padding: 15px 20px !important;
-        border-radius: 12px !important;
-        border: 2px solid var(--werfen-gray-dark) !important;
-        background: linear-gradient(135deg, var(--werfen-white) 0%, var(--werfen-gray) 100%) !important;
-        color: var(--werfen-blue) !important;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-        font-weight: 700 !important;
-        font-size: 16px !important;
-        text-align: center !important;
         text-decoration: none !important;
-        text-transform: none !important;
-        letter-spacing: 0.8px !important;
         line-height: 1.2 !important;
-        cursor: pointer !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
-        position: relative !important;
-        overflow: hidden !important;
-        box-sizing: border-box !important;
     }
     
-    /* Hover effect para navegación */
-    .stApp section[data-testid="stSidebar"] .stButton > button:hover,
-    div[data-testid="stSidebar"] .stButton > button:hover,
-    section[data-testid="stSidebar"] .stButton > button:hover,
-    .stSidebar .stButton > button:hover {
-        background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%) !important;
-        color: var(--werfen-white) !important;
+    .stApp .stButton > button:hover,
+    div[data-testid="stAppViewContainer"] .stButton > button:hover {
+        background: white !important;
+        color: var(--werfen-blue) !important;
         border-color: var(--werfen-blue) !important;
-        transform: translateY(-4px) !important;
-        box-shadow: 0 12px 30px rgba(6, 3, 141, 0.4) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3) !important;
     }
     
-    /* Estado activo/focus para navegación */
-    .stApp section[data-testid="stSidebar"] .stButton > button:active,
-    .stApp section[data-testid="stSidebar"] .stButton > button:focus,
-    div[data-testid="stSidebar"] .stButton > button:active,
-    div[data-testid="stSidebar"] .stButton > button:focus,
-    section[data-testid="stSidebar"] .stButton > button:active,
-    section[data-testid="stSidebar"] .stButton > button:focus,
-    .stSidebar .stButton > button:active,
-    .stSidebar .stButton > button:focus {
-        background: linear-gradient(135deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
-        color: var(--werfen-white) !important;
-        border-color: var(--werfen-orange) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 20px rgba(232, 119, 33, 0.4) !important;
-        outline: none !important;
+    .stApp .stButton > button:active,
+    div[data-testid="stAppViewContainer"] .stButton > button:active {
+        background: var(--werfen-blue-dark) !important;
+        color: white !important;
+        border-color: var(--werfen-blue-dark) !important;
+        transform: translateY(0px) !important;
+        box-shadow: 0 1px 2px rgba(6, 3, 141, 0.2) !important;
     }
     
-    /* Estado deshabilitado para navegación */
-    .stApp section[data-testid="stSidebar"] .stButton > button:disabled,
-    div[data-testid="stSidebar"] .stButton > button:disabled,
-    section[data-testid="stSidebar"] .stButton > button:disabled,
-    .stSidebar .stButton > button:disabled {
-        background: linear-gradient(135deg, var(--werfen-gray-dark) 0%, #bbb 100%) !important;
-        color: #888 !important;
-        border-color: var(--werfen-gray-dark) !important;
-        opacity: 0.7 !important;
+    .stApp .stButton > button:focus,
+    div[data-testid="stAppViewContainer"] .stButton > button:focus {
+        outline: 2px solid rgba(6, 3, 141, 0.3) !important;
+        outline-offset: 2px !important;
+    }
+    
+    .stApp .stButton > button:disabled,
+    div[data-testid="stAppViewContainer"] .stButton > button:disabled {
+        background: #e0e0e0 !important;
+        color: #999 !important;
+        border-color: #ddd !important;
         cursor: not-allowed !important;
         transform: none !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        box-shadow: none !important;
+        opacity: 0.6 !important;
+    }
+    /* ========== ESTILOS PARA BOTONES ESPECÍFICOS ========== */
+    /* Botones de tipo "primary" - Mantener el estilo azul → blanco */
+    .stApp .stButton > button[kind="primary"],
+    .stApp .stButton > button[data-testid="baseButton-primary"] {
+        background: var(--werfen-blue) !important;
+        color: white !important;
+        border-color: var(--werfen-blue) !important;
     }
     
-    .stApp section[data-testid="stSidebar"] .stButton > button:disabled:hover,
-    div[data-testid="stSidebar"] .stButton > button:disabled:hover,
-    section[data-testid="stSidebar"] .stButton > button:disabled:hover,
-    .stSidebar .stButton > button:disabled:hover {
-        transform: none !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-        background: linear-gradient(135deg, var(--werfen-gray-dark) 0%, #bbb 100%) !important;
+    .stApp .stButton > button[kind="primary"]:hover,
+    .stApp .stButton > button[data-testid="baseButton-primary"]:hover {
+        background: white !important;
+        color: var(--werfen-blue) !important;
+        border-color: var(--werfen-blue) !important;
     }
     
-    /* Botón activo (página actual) */
-    .nav-active .stButton > button {
-        background: linear-gradient(135deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
-        color: var(--werfen-white) !important;
-        border-color: var(--werfen-orange) !important;
-        box-shadow: 0 8px 20px rgba(232, 119, 33, 0.3) !important;
-        transform: translateY(-2px) !important;
+    /* Botones de tipo "secondary" - Mantener el estilo azul → blanco */
+    .stApp .stButton > button[kind="secondary"],
+    .stApp .stButton > button[data-testid="baseButton-secondary"] {
+        background: var(--werfen-blue) !important;
+        color: white !important;
+        border: 2px solid var(--werfen-blue) !important;
     }
     
-    /* Remover estilos conflictivos de Streamlit */
-    .stButton > button[kind="secondary"],
-    .stButton > button[kind="primary"] {
-        all: unset !important;
+    .stApp .stButton > button[kind="secondary"]:hover,
+    .stApp .stButton > button[data-testid="baseButton-secondary"]:hover {
+        background: white !important;
+        color: var(--werfen-blue) !important;
     }
-
+    
+    /* Estilos de espaciado para contenedores de botones */
+    .stButton {
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Botones en columnas */
+    div[data-testid="column"] .stButton > button {
+        width: 100% !important;
+    }
+    
     /* ========== HEADER Y NAVEGACIÓN ========== */
     .main-header {
         background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
@@ -171,68 +167,6 @@ def get_custom_css():
     /* Estilo para contenedores de botones en sidebar */
     .stButton {
         margin-bottom: 12px !important;
-    }
-
-    /* ========== BOTONES PRINCIPALES ========== */
-    .stButton > button {
-        background: linear-gradient(45deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
-        color: white;
-        border: 2px solid var(--werfen-blue);
-        border-radius: 8px;
-        padding: 0.6rem 1.2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 4px rgba(6, 3, 141, 0.2);
-    }
-
-    .stButton > button:hover {
-        background: white !important;
-        color: var(--werfen-blue) !important;
-        border: 2px solid var(--werfen-blue) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3);
-    }
-
-    .stButton > button:focus {
-        background: white !important;
-        color: var(--werfen-blue) !important;
-        border: 2px solid var(--werfen-blue) !important;
-        box-shadow: 0 0 0 2px rgba(6, 3, 141, 0.2);
-    }
-
-    .stButton > button:active {
-        background: var(--werfen-gray) !important;
-        color: var(--werfen-blue) !important;
-        border: 2px solid var(--werfen-blue) !important;
-        transform: translateY(0px);
-    }
-
-    .stButton > button:disabled {
-        background: var(--werfen-gray) !important;
-        color: #999 !important;
-        border: 2px solid #ddd !important;
-        cursor: not-allowed !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    /* ========== BOTONES SECUNDARIOS (NARANJA) ========== */
-    .orange-button {
-        background: linear-gradient(45deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%) !important;
-        color: white !important;
-        border: 2px solid var(--werfen-orange) !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 2px 4px rgba(232, 119, 33, 0.2) !important;
-    }
-
-    .orange-button:hover {
-        background: white !important;
-        color: var(--werfen-orange) !important;
-        border: 2px solid var(--werfen-orange) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 8px rgba(232, 119, 33, 0.3) !important;
     }
 
     /* ========== TARJETAS DE CLIENTE ========== */
