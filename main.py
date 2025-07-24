@@ -1,4 +1,5 @@
 import streamlit as st
+import base64
 from database import init_database
 from config import get_db_config, is_read_only_mode
 from ui_components import (
@@ -14,6 +15,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+def get_logo_base64():
+    """Convierte el logo a base64 para evitar el botón de fullscreen"""
+    try:
+        with open("logo.png", "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except FileNotFoundError:
+        return ""
 
 def main():
     """Función principal de la aplicación"""
@@ -39,7 +48,13 @@ def main():
     initialize_session_state()
     
     # Sidebar para navegación
-    st.sidebar.title("Menú Principal")
+    # Mostrar logo de Werfen en la sidebar usando HTML para evitar el botón fullscreen
+    st.sidebar.markdown("""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <img src="data:image/png;base64,{}" width="200" style="max-width: 100%;">
+    </div>
+    """.format(get_logo_base64()), unsafe_allow_html=True)
+    st.sidebar.markdown("---")  # Línea separadora
     
     # Configurar opciones según el entorno
     if is_read_only_mode():

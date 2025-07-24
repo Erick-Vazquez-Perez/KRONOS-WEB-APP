@@ -490,10 +490,8 @@ def get_custom_css():
     }
 
     .werfen-logo h1 {
-        background: linear-gradient(45deg, var(--werfen-blue) 0%, var(--werfen-orange) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        font-family: 'Verdana', sans-serif;
+        color: var(--werfen-blue);
         font-size: 3rem;
         font-weight: 800;
         margin: 0;
@@ -530,6 +528,8 @@ def get_custom_css():
         }
         
         .werfen-logo h1 {
+            font-family: 'Verdana', sans-serif;
+            color: var(--werfen-blue);
             font-size: 2rem;
         }
         
@@ -551,6 +551,18 @@ def get_custom_css():
         border-top: 1px solid var(--werfen-gray-dark);
         color: var(--werfen-blue);
         font-size: 0.9rem;
+    }
+
+    /* ========== OCULTAR BOTÓN FULLSCREEN DE IMÁGENES ========== */
+    [data-testid="StyledFullScreenButton"],
+    [data-testid="stImageFullScreenButton"],
+    button[title="View fullscreen"] {
+        display: none !important;
+    }
+    
+    /* Ocultar overlay de fullscreen */
+    [data-testid="imageFullScreenOverlay"] {
+        display: none !important;
     }
     </style>
     """
