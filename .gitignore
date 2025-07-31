@@ -59,3 +59,7 @@ requirements-dev.txt
 # debug_*.py
 temp_*.py
 *_temp.py
+
+# Archivos SQL
+*.sql
+*.sql.gz
