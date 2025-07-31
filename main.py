@@ -81,7 +81,6 @@ def main():
     
     # Información sobre funciones futuras
     st.sidebar.markdown("### Próximamente")
-    st.sidebar.info("Chat con IA integrada")
     st.sidebar.info("Exportación avanzada")
     
     # Navegación principal
