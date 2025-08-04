@@ -542,7 +542,7 @@ def get_client_activities(client_id):
             WHERE ca.client_id = ?
             ORDER BY 
                 CASE ca.activity_name
-                    WHEN 'Fecha envío OC' THEN 1
+                    WHEN 'Fecha Envío OC' THEN 1
                     WHEN 'Albaranado' THEN 2
                     WHEN 'Fecha Entrega' THEN 3
                     ELSE 4
@@ -567,7 +567,7 @@ def create_default_activities(client_id):
     
     # Actividades predeterminadas en el orden requerido
     default_activities = [
-        ("Fecha envío OC", 1),   # Primera actividad
+        ("Fecha Envío OC", 1),   # Primera actividad
         ("Albaranado", 2),       # Segunda actividad
         ("Fecha Entrega", 3)     # Tercera actividad
     ]
@@ -686,7 +686,7 @@ def get_calculated_dates(client_id):
             WHERE client_id = ? 
             ORDER BY 
                 CASE activity_name
-                    WHEN 'Fecha envío OC' THEN 1
+                    WHEN 'Fecha Envío OC' THEN 1
                     WHEN 'Albaranado' THEN 2
                     WHEN 'Fecha Entrega' THEN 3
                     ELSE 4
@@ -704,7 +704,7 @@ def get_calculated_dates(client_id):
                 WHERE client_id = ? 
                 ORDER BY 
                     CASE activity_name
-                        WHEN 'Fecha envío OC' THEN 1
+                        WHEN 'Fecha Envío OC' THEN 1
                         WHEN 'Albaranado' THEN 2
                         WHEN 'Fecha Entrega' THEN 3
                         ELSE 4

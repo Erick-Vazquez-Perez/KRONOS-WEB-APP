@@ -775,7 +775,7 @@ def show_monthly_readonly_calendar(client_id, selected_month):
     # Mostrar información resumen del mes
     total_dates_month = len(month_dates)
     # Ordenar actividades según el orden específico
-    activity_order = ['Fecha envío OC', 'Albaranado', 'Fecha Entrega']
+    activity_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
     all_activities = list(set([d['activity_name'] for d in month_dates]))
     
     activities_list = []
@@ -1276,7 +1276,7 @@ def prepare_calendar_for_editing(dates_df):
         return pd.DataFrame()
     
     # Ordenar actividades según el orden específico requerido
-    activity_order = ['Fecha envío OC', 'Albaranado', 'Fecha Entrega']
+    activity_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
     all_activities = dates_df['activity_name'].unique()
     
     # Crear lista ordenada de actividades
@@ -2197,7 +2197,7 @@ def show_add_client():
         albaranado_sap_code = "0"  # Código SAP por defecto
         
         # Actividades predeterminadas (orden correcto sin Embarque)
-        default_activities = ["Fecha envío OC", "Albaranado", "Fecha Entrega"]
+        default_activities = ["Fecha Envío OC", "Albaranado", "Fecha Entrega"]
         
         freq_options = frequency_templates['name'].tolist()
         freq_ids = frequency_templates['id'].tolist()
