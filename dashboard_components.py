@@ -20,7 +20,7 @@ def get_tomorrow_oc_clients():
     
     conn = get_db_connection()
     query = """
-    SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region
+    SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap
     FROM clients c
     JOIN calculated_dates cd ON c.id = cd.client_id
     WHERE cd.activity_name = 'Fecha Envío OC' 
@@ -204,25 +204,6 @@ def show_dashboard():
     st.header("Dashboard Kronos")
     st.markdown("*Vista general de las actividades y fechas programadas*")
     
-    # ========== SELECTOR DE MES ==========
-    col1, col2, col3 = st.columns([2, 2, 4])
-    
-    with col1:
-        current_year = datetime.now().year
-        years = list(range(current_year - 1, current_year + 2))
-        selected_year = st.selectbox("Año:", years, index=1, key="dashboard_year")
-    
-    with col2:
-        months = [
-            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-        ]
-        current_month_idx = datetime.now().month - 1
-        selected_month_name = st.selectbox("Mes:", months, index=current_month_idx, key="dashboard_month")
-        selected_month = months.index(selected_month_name) + 1
-    
-    st.markdown("---")
-    
     # ========== TABLAS DE ALERTAS (PRIMERA SECCIÓN) ==========
     
     col1, col2 = st.columns(2)
@@ -243,11 +224,13 @@ def show_dashboard():
                 'name': 'Cliente',
                 'codigo_ag': 'Cód. AG',
                 'csr': 'CSR',
+                'vendedor': 'Vendedor',
+                'calendario_sap': 'Cal. SAP',
                 'date': 'Fecha OC'
             })
             
             # Seleccionar columnas clave para mostrar
-            key_columns = ['Cliente', 'Cód. AG', 'CSR', 'Fecha OC']
+            key_columns = ['Cliente', 'Cód. AG', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
             display_df = display_df[key_columns]
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
