@@ -223,6 +223,7 @@ def show_dashboard():
             display_df = display_df.rename(columns={
                 'name': 'Cliente',
                 'codigo_ag': 'Cód. AG',
+                'codigo_we': 'Cód. WE',
                 'csr': 'CSR',
                 'vendedor': 'Vendedor',
                 'calendario_sap': 'Cal. SAP',
@@ -230,7 +231,7 @@ def show_dashboard():
             })
             
             # Seleccionar columnas clave para mostrar
-            key_columns = ['Cliente', 'Cód. AG', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
+            key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
             display_df = display_df[key_columns]
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -280,6 +281,7 @@ def show_dashboard():
                     display_df = display_df.rename(columns={
                         'name': 'Cliente',
                         'codigo_ag': 'Cód. AG',
+                        'codigo_we': 'Cód. WE',
                         'csr': 'CSR',
                         'frequency_name': 'Frecuencia',
                         'fecha_albaranado': 'Fecha Albaranado',
@@ -287,7 +289,7 @@ def show_dashboard():
                         'reason': 'Motivo'
                     })
                     
-                    key_columns = ['Cliente', 'Cód. AG', 'Frecuencia', 'Fecha Albaranado', 'Día Afectado', 'Motivo']
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Frecuencia', 'Fecha Albaranado', 'Día Afectado', 'Motivo']
                     display_df = display_df[key_columns]
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -311,13 +313,14 @@ def show_dashboard():
                     display_df = display_df.rename(columns={
                         'name': 'Cliente',
                         'codigo_ag': 'Cód. AG',
+                        'codigo_we': 'Cód. WE',
                         'csr': 'CSR',
                         'fecha_albaranado': 'Fecha Albaranado',
                         'holiday_description': 'Festivo',
                         'reason': 'Motivo'
                     })
                     
-                    key_columns = ['Cliente', 'Cód. AG', 'Fecha Albaranado', 'Festivo', 'Motivo']
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Fecha Albaranado', 'Festivo', 'Motivo']
                     display_df = display_df[key_columns]
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
