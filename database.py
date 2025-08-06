@@ -1,8 +1,29 @@
 import sqlite3
 import pandas as pd
 import json
+import warnings
 from datetime import datetime, date
 from config import get_database_path, get_db_config
+
+# Suprimir warnings específicos de pandas sobre SQLAlchemy
+warnings.filterwarnings('ignore', message='.*SQLAlchemy.*', category=UserWarning)
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*', category=UserWarning)
+
+# Cache simple para consultas frecuentes
+_query_cache = {}
+_cache_timeout = 30  # 30 segundos
+
+def clear_cache():
+    """Limpia el cache de consultas"""
+    global _query_cache
+    _query_cache.clear()
+
+def clear_cache_pattern(pattern):
+    """Limpia entradas específicas del cache que contengan el patrón"""
+    global _query_cache
+    keys_to_remove = [key for key in _query_cache.keys() if pattern in key]
+    for key in keys_to_remove:
+        del _query_cache[key]
 
 def get_db_connection():
     """Obtiene una conexión a la base de datos según el entorno"""
@@ -27,17 +48,37 @@ def execute_query(query, params=None):
     finally:
         conn.close()
 
-def execute_query_df(query, params=None):
+def execute_query_df(query, params=None, use_cache=False):
     """Ejecuta una consulta y devuelve un DataFrame"""
-    conn = get_db_connection()
-    try:
-        if params:
-            df = pd.read_sql_query(query, conn, params=params)
-        else:
-            df = pd.read_sql_query(query, conn)
-        return df
-    finally:
-        conn.close()
+    import time
+    
+    # Si se solicita cache, verificar si tenemos una versión reciente
+    cache_key = None
+    if use_cache:
+        cache_key = f"{query}_{str(params)}"
+        if cache_key in _query_cache:
+            cached_data, timestamp = _query_cache[cache_key]
+            if time.time() - timestamp < _cache_timeout:
+                return cached_data.copy()  # Retornar copia para evitar modificaciones
+    
+    # Suprimir warnings temporalmente para esta consulta específica
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        
+        conn = get_db_connection()
+        try:
+            if params:
+                df = pd.read_sql_query(query, conn, params=params)
+            else:
+                df = pd.read_sql_query(query, conn)
+            
+            # Guardar en cache si se solicitó
+            if use_cache and cache_key:
+                _query_cache[cache_key] = (df.copy(), time.time())
+            
+            return df
+        finally:
+            conn.close()
 
 def get_sap_calendar_mapping():
     """Retorna el mapeo de frecuencias a códigos de calendario SAP"""
@@ -279,14 +320,11 @@ def init_database():
 
 def get_clients():
     """Obtiene todos los clientes"""
-    conn = get_db_connection()
     try:
-        clients = pd.read_sql_query("SELECT * FROM clients", conn)
+        return execute_query_df("SELECT * FROM clients", use_cache=True)
     except Exception as e:
         print(f"Error obteniendo clientes: {e}")
-        clients = pd.DataFrame()
-    conn.close()
-    return clients
+        return pd.DataFrame()
 
 def get_client_by_id(client_id):
     """Obtiene un cliente por su ID - Versión mejorada"""
@@ -330,6 +368,10 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_c
         
         conn.commit()
         print(f"Cliente {client_id} creado exitosamente")
+        
+        # Limpiar cache relacionado con clientes
+        clear_cache_pattern("SELECT * FROM clients")
+        
         return client_id
         
     except Exception as e:
@@ -452,14 +494,11 @@ def delete_client(client_id):
 
 def get_frequency_templates():
     """Obtiene todas las plantillas de frecuencias"""
-    conn = get_db_connection()
     try:
-        templates = pd.read_sql_query("SELECT * FROM frequency_templates", conn)
+        return execute_query_df("SELECT * FROM frequency_templates", use_cache=True)
     except Exception as e:
         print(f"Error obteniendo frecuencias: {e}")
-        templates = pd.DataFrame()
-    conn.close()
-    return templates
+        return pd.DataFrame()
 
 def add_frequency_template(name, frequency_type, frequency_config, description, manual_sap_code=None):
     """Agrega una nueva plantilla de frecuencia"""
@@ -571,9 +610,8 @@ def get_frequency_usage_count(template_id):
 
 def get_client_activities(client_id):
     """Obtiene las actividades de un cliente en orden específico"""
-    conn = get_db_connection()
     try:
-        activities = pd.read_sql_query('''
+        query = '''
             SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
             FROM client_activities ca
             JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
@@ -585,12 +623,11 @@ def get_client_activities(client_id):
                     WHEN 'Fecha Entrega' THEN 3
                     ELSE 4
                 END
-        ''', conn, params=(client_id,))
+        '''
+        return execute_query_df(query, params=(client_id,), use_cache=True)
     except Exception as e:
         print(f"Error obteniendo actividades del cliente {client_id}: {e}")
-        activities = pd.DataFrame()
-    conn.close()
-    return activities
+        return pd.DataFrame()
 
 def create_default_activities(client_id):
     """Crea las actividades predeterminadas para un cliente"""

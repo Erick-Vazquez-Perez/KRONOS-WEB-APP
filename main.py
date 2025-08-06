@@ -39,8 +39,7 @@ def main():
     # Mostrar header personalizado de Werfen
     st.markdown(get_werfen_header(), unsafe_allow_html=True)
     
-    # Mostrar información del usuario en la sidebar
-    auth_system.show_user_info()
+    # NO mostrar información del usuario aquí - se mostrará al final
     
     # Obtener configuración de entorno y usuario actual
     config = get_db_config()
@@ -91,6 +90,9 @@ def main():
     # Información sobre funciones futuras
     st.sidebar.markdown("### Próximamente")
     st.sidebar.info("Exportación avanzada")
+    
+    # Mostrar información del usuario al final de la sidebar
+    auth_system.show_user_info_bottom()
     
     # Navegación principal
     if page == "Dashboard":

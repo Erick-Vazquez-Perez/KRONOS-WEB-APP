@@ -76,18 +76,28 @@ class AuthSystem:
             st.session_state.user_name = user["name"]
             st.session_state.user_permissions = user["permissions"]
             st.session_state.login_time = datetime.now()
+            st.session_state.session_id = f"{username}_{datetime.now().timestamp()}"
             return True
         return False
     
     def logout(self):
         """Cierra la sesión"""
-        for key in ['authenticated', 'username', 'user_role', 'user_name', 'user_permissions', 'login_time']:
+        for key in ['authenticated', 'username', 'user_role', 'user_name', 'user_permissions', 'login_time', 'session_id']:
             if key in st.session_state:
                 del st.session_state[key]
     
     def is_authenticated(self) -> bool:
-        """Verifica si el usuario está autenticado"""
-        return st.session_state.get('authenticated', False)
+        """Verifica si el usuario está autenticado y la sesión es válida"""
+        if not st.session_state.get('authenticated', False):
+            return False
+        
+        # Verificar que la sesión no sea muy antigua (opcional: 8 horas)
+        login_time = st.session_state.get('login_time')
+        if login_time and (datetime.now() - login_time).total_seconds() > 28800:  # 8 horas
+            self.logout()
+            return False
+        
+        return True
     
     def get_current_user(self) -> dict:
         """Obtiene información del usuario actual"""
@@ -129,76 +139,165 @@ class AuthSystem:
     
     def show_login_form(self):
         """Muestra el formulario de login"""
+        import base64
+        
+        # Función para obtener el logo en base64
+        def get_logo_base64():
+            try:
+                with open("logo.png", "rb") as img_file:
+                    return base64.b64encode(img_file.read()).decode()
+            except FileNotFoundError:
+                return ""
+        
+        logo_base64 = get_logo_base64()
+        
+        # CSS para login compacto
         st.markdown("""
-        <div style="display: flex; justify-content: center; align-items: center; height: 60vh;">
-            <div style="background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); max-width: 400px; width: 100%;">
+        <style>
+        .main .block-container {
+            padding: 1rem !important;
+            max-width: 100% !important;
+        }
+        
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+        
+        footer {
+            display: none !important;
+        }
+        </style>
         """, unsafe_allow_html=True)
         
+        # Crear un diseño centrado usando columnas
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            st.markdown("### 🔐 Acceso KRONOS 2.0")
-            st.markdown("---")
+            # Logo
+            if logo_base64:
+                st.markdown(f"""
+                <div style="text-align: center; margin-bottom: 1rem;">
+                    <img src="data:image/png;base64,{logo_base64}" width="150" style="max-width: 100%;">
+                </div>
+                """, unsafe_allow_html=True)
             
-            with st.form("login_form"):
-                username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
-                password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
-                
-                submitted = st.form_submit_button("🚀 Iniciar Sesión", use_container_width=True)
+            # Título
+            st.markdown("""
+            <h1 style="text-align: center; color: #2c3e50; font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0;">
+                KRONOS 2.0
+            </h1>
+            <p style="text-align: center; color: #6c757d; font-size: 0.9rem; margin-bottom: 1.5rem;">
+                Gestión de Calendarios
+            </p>
+            """, unsafe_allow_html=True)
+            
+            # Contenedor con borde para el formulario
+            st.markdown("""
+            <div style="
+                background: #f8f9fa; 
+                border: 2px solid #e9ecef; 
+                border-radius: 10px; 
+                padding: 1.5rem; 
+                margin: 1rem 0;
+            ">
+            """, unsafe_allow_html=True)
+            
+            # Formulario
+            with st.form("login_form", clear_on_submit=False):
+                username = st.text_input("", placeholder="Usuario", label_visibility="collapsed", key="username_input")
+                password = st.text_input("", type="password", placeholder="Contraseña", label_visibility="collapsed", key="password_input")
+                submitted = st.form_submit_button("Acceder", type="primary", use_container_width=True)
                 
                 if submitted:
                     if username and password:
                         if self.login(username, password):
-                            st.success("✅ ¡Acceso concedido!")
+                            st.success("¡Acceso concedido!")
                             st.rerun()
                         else:
-                            st.error("❌ Usuario o contraseña incorrectos")
+                            st.error("Usuario o contraseña incorrectos")
                     else:
-                        st.warning("⚠️ Por favor, completa todos los campos")
+                        st.warning("Complete todos los campos")
             
-            st.markdown("---")
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Información de credenciales
             st.markdown("""
-            <div style="text-align: center; color: #666; font-size: 0.8em;">
-                <p><strong>Usuarios de prueba:</strong></p>
-                <p>📋 <code>kronosuser</code> / <code>KronosUser2024!</code> (Solo lectura)</p>
-                <p>⚙️ <code>kronosadmin</code> / <code>KronosAdmin2024!</code> (Administrador)</p>
+            <div style="
+                background: #f8f9fa; 
+                border-radius: 8px; 
+                padding: 1rem; 
+                margin-top: 1rem; 
+                border-left: 3px solid #007bff;
+            ">
+                <h5 style="font-size: 0.85rem; color: #495057; margin-bottom: 0.5rem;">Acceso de Prueba</h5>
+                <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
+                    kronosuser / KronosUser2024!
+                </div>
+                <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
+                    kronosadmin / KronosAdmin2024!
+                </div>
             </div>
             """, unsafe_allow_html=True)
-        
-        st.markdown("</div></div>", unsafe_allow_html=True)
     
-    def show_user_info(self):
+    def show_user_info(self, at_bottom=False):
         """Muestra información del usuario en la sidebar"""
+        if self.is_authenticated():
+            user = self.get_current_user()
+            
+            # Si se especifica at_bottom, no mostrar aquí
+            if at_bottom:
+                return
+            
+            with st.sidebar:
+                st.markdown("---")
+                st.markdown("### Usuario Activo")
+                
+                # Información del usuario sin emojis
+                role_name = "Administrador" if self.is_admin() else "Usuario"
+                
+                st.markdown(f"""
+                **{user['name']}**  
+                Usuario: `{user['username']}`  
+                Rol: {role_name}  
+                Sesión: {user['login_time'].strftime('%H:%M')}
+                """)
+                
+                # Indicador de permisos sin emojis
+                if self.is_read_only():
+                    st.warning("Modo Solo Lectura")
+                else:
+                    st.success("Permisos de Edición")
+                
+                # Botón de logout sin emoji
+                if st.button("Cerrar Sesión", use_container_width=True):
+                    self.logout()
+                    st.rerun()
+                
+                st.markdown("---")
+    
+    def show_user_info_bottom(self):
+        """Muestra información del usuario al final de la sidebar"""
         if self.is_authenticated():
             user = self.get_current_user()
             
             with st.sidebar:
                 st.markdown("---")
-                st.markdown("### 👤 Usuario Activo")
+                st.markdown("**Usuario Activo**")
                 
-                # Información del usuario
-                role_emoji = "⚙️" if self.is_admin() else "📋"
-                role_name = "Administrador" if self.is_admin() else "Usuario"
+                role_name = "Admin" if self.is_admin() else "Usuario"
+                status = "Solo lectura" if self.is_read_only() else "Edición"
                 
                 st.markdown(f"""
-                **{role_emoji} {user['name']}**  
-                📧 `{user['username']}`  
-                🔑 {role_name}  
-                ⏰ {user['login_time'].strftime('%H:%M')}
-                """)
+                <div style="font-size: 0.8em; color: #666;">
+                <strong>{user['name']}</strong><br>
+                <code>{user['username']}</code> • {role_name}<br>
+                {status} • {user['login_time'].strftime('%H:%M')}
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # Indicador de permisos
-                if self.is_read_only():
-                    st.warning("🔒 Modo Solo Lectura")
-                else:
-                    st.success("✏️ Permisos de Edición")
-                
-                # Botón de logout
-                if st.button("🚪 Cerrar Sesión", use_container_width=True):
+                if st.button("Cerrar Sesión", use_container_width=True, key="logout_bottom"):
                     self.logout()
                     st.rerun()
-                
-                st.markdown("---")
 
 # Instancia global del sistema de autenticación
 auth_system = AuthSystem()

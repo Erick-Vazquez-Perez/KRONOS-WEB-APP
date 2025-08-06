@@ -285,9 +285,6 @@ class DatabaseConfig:
             
             # Validar que tenemos la cadena de conexión
             if not connection_string or connection_string == 'None':
-                print(f"[KRONOS] ERROR: SQLITECLOUD_CONNECTION_STRING no está configurada")
-                print(f"[KRONOS] Valor recibido: {connection_string}")
-                
                 # En Streamlit Cloud, intentar leer desde secrets
                 try:
                     connection_string = st.secrets.get("SQLITECLOUD_CONNECTION_STRING")
@@ -303,7 +300,7 @@ class DatabaseConfig:
                         "o en Streamlit Cloud Secrets."
                     )
             
-            print(f"[KRONOS] Conectando a SQLiteCloud...")
+            # Conexión silenciosa - solo mostrar errores
             try:
                 return sqlitecloud.connect(connection_string)
             except Exception as e:
@@ -313,7 +310,6 @@ class DatabaseConfig:
             # Conexión SQLite local para testing
             import sqlite3
             db_path = self.get_database_path()
-            print(f"[KRONOS] Conectando a SQLite local: {db_path}")
             return sqlite3.connect(db_path)
     
     def get_environment(self):
