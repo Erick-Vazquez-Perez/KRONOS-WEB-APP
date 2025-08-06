@@ -6,8 +6,38 @@ from config import get_database_path, get_db_config
 
 def get_db_connection():
     """Obtiene una conexión a la base de datos según el entorno"""
-    db_path = get_database_path()
-    return sqlite3.connect(db_path)
+    config = get_db_config()
+    return config.get_db_connection()
+
+def execute_query(query, params=None):
+    """Ejecuta una consulta de manera compatible con ambos tipos de BD"""
+    conn = get_db_connection()
+    try:
+        if params:
+            result = conn.execute(query, params)
+        else:
+            result = conn.execute(query)
+        
+        # Para queries que devuelven datos
+        if query.strip().upper().startswith('SELECT'):
+            return result.fetchall()
+        else:
+            conn.commit()
+            return result
+    finally:
+        conn.close()
+
+def execute_query_df(query, params=None):
+    """Ejecuta una consulta y devuelve un DataFrame"""
+    conn = get_db_connection()
+    try:
+        if params:
+            df = pd.read_sql_query(query, conn, params=params)
+        else:
+            df = pd.read_sql_query(query, conn)
+        return df
+    finally:
+        conn.close()
 
 def get_sap_calendar_mapping():
     """Retorna el mapeo de frecuencias a códigos de calendario SAP"""

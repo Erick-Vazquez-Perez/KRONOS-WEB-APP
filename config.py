@@ -233,20 +233,25 @@ class DatabaseConfig:
         
         configs = {
             'development': {
+                'type': 'cloud',
+                'connection_string': os.getenv('SQLITECLOUD_CONNECTION_STRING'),
                 'database_name': 'client_calendar.db',
-                'description': 'Base de datos compartida (desarrollo)',
+                'description': 'Base de datos en la nube (desarrollo)',
                 'backup_enabled': True,
                 'debug_mode': True
             },
             'production': {
+                'type': 'cloud',
+                'connection_string': os.getenv('SQLITECLOUD_CONNECTION_STRING'),
                 'database_name': 'client_calendar.db',
-                'description': 'Base de datos de producción',
+                'description': 'Base de datos en la nube (producción)',
                 'backup_enabled': True,
                 'debug_mode': False
             },
             'testing': {
+                'type': 'local',
                 'database_name': 'client_calendar_test.db',
-                'description': 'Base de datos de pruebas',
+                'description': 'Base de datos local de pruebas',
                 'backup_enabled': False,
                 'debug_mode': True
             }
@@ -255,26 +260,34 @@ class DatabaseConfig:
         return configs.get(self.environment, configs['development'])
     
     def get_database_path(self):
-        """Retorna la ruta completa de la base de datos"""
-        db_name = self.db_config['database_name']
-        
-        # En producción (Streamlit Cloud), usar ruta absoluta basada en el directorio del proyecto
-        if self.is_production():
-            # Obtener el directorio donde está este archivo config.py
-            project_dir = Path(__file__).parent.absolute()
-            db_path = project_dir / db_name
-            print(f"[KRONOS] Ruta de BD en producción: {db_path}")
-            return str(db_path)
+        """Retorna la ruta/conexión de la base de datos"""
+        if self.db_config['type'] == 'cloud':
+            return self.db_config['connection_string']
         else:
-            # En desarrollo, usar ruta relativa como antes
-            print(f"[KRONOS] Ruta de BD en desarrollo: {db_name}")
-            return db_name
+            # Para tests locales
+            db_name = self.db_config['database_name']
+            if self.is_production():
+                project_dir = Path(__file__).parent.absolute()
+                db_path = project_dir / db_name
+                print(f"[KRONOS] Ruta de BD local en producción: {db_path}")
+                return str(db_path)
+            else:
+                print(f"[KRONOS] Ruta de BD local en desarrollo: {db_name}")
+                return db_name
     
     def get_db_connection(self):
         """Obtiene una conexión a la base de datos según el entorno"""
-        import sqlite3
-        db_path = self.get_database_path()
-        return sqlite3.connect(db_path)
+        if self.db_config['type'] == 'cloud':
+            import sqlitecloud
+            connection_string = self.get_database_path()
+            print(f"[KRONOS] Conectando a SQLiteCloud...")
+            return sqlitecloud.connect(connection_string)
+        else:
+            # Conexión SQLite local para testing
+            import sqlite3
+            db_path = self.get_database_path()
+            print(f"[KRONOS] Conectando a SQLite local: {db_path}")
+            return sqlite3.connect(db_path)
     
     def get_environment(self):
         """Retorna el entorno actual"""
