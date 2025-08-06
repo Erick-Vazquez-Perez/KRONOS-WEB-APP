@@ -133,15 +133,23 @@ def auto_update_client_calendario_sap(client_id, activity_name, frequency_templa
 
 def init_database():
     """Inicializa la base de datos y crea las tablas necesarias"""
-    db_path = get_database_path()
-    config = get_db_config()
-    
-    print(f"[KRONOS] Inicializando base de datos: {db_path}")
-    print(f"[KRONOS] Entorno: {config.get_environment()}")
-    print(f"[KRONOS] Descripción: {config.db_config['description']}")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        db_path = get_database_path()
+        config = get_db_config()
+        
+        print(f"[KRONOS] Inicializando base de datos: {db_path}")
+        print(f"[KRONOS] Entorno: {config.get_environment()}")
+        print(f"[KRONOS] Descripción: {config.db_config['description']}")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+    except Exception as e:
+        print(f"[KRONOS] ERROR en inicialización de BD: {e}")
+        import streamlit as st
+        st.error(f"❌ Error de configuración de base de datos: {str(e)}")
+        st.stop()
+        return
     
     # Tabla de clientes
     cursor.execute('''

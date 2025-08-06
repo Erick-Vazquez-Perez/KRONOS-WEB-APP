@@ -3,7 +3,7 @@ import json
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
-from config import is_read_only_mode
+from auth_system import auth_system, require_permission, is_read_only_mode
 from database import (
     get_clients, get_client_by_id, add_client, update_client, delete_client,
     get_frequency_templates, add_frequency_template, update_frequency_template,
@@ -2137,11 +2137,10 @@ def show_dates_editing_tab(client):
 
 def show_add_client():
     """Muestra el formulario para agregar un nuevo cliente"""
-    if is_read_only_mode():
-        st.header("Agregar Nuevo Cliente")
-        st.error("**FUNCIÓN NO DISPONIBLE EN PRODUCCIÓN**")
-        st.info("Esta función está deshabilitada en el entorno de producción para mantener la integridad de los datos.")
-        return
+    
+    # Verificar permisos - Solo administradores pueden agregar clientes
+    require_permission('modify_clients', 
+                      "❌ No tienes permisos para agregar clientes. Se requiere rol de administrador.")
     
     st.header("Agregar Nuevo Cliente")
     
@@ -2355,11 +2354,10 @@ def show_add_client():
 
 def show_manage_frequencies():
     """Muestra la interfaz de administración de frecuencias"""
-    if is_read_only_mode():
-        st.header("Administrar Frecuencias")
-        st.error("**FUNCIÓN NO DISPONIBLE EN PRODUCCIÓN**")
-        st.info("Esta función está deshabilitada en el entorno de producción para mantener la integridad de los datos.")
-        return
+    
+    # Verificar permisos - Solo administradores pueden modificar frecuencias
+    require_permission('modify_frequencies', 
+                      "❌ No tienes permisos para administrar frecuencias. Se requiere rol de administrador.")
     
     st.header("Administrar Frecuencias")
     

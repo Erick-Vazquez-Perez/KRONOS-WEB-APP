@@ -1,7 +1,8 @@
 import streamlit as st
 import base64
 from database import init_database
-from config import get_db_config, is_read_only_mode
+from config import get_db_config
+from auth_system import auth_system, require_auth, is_read_only_mode, get_current_user
 from ui_components import (
     show_clients_gallery, 
     show_add_client, 
@@ -32,16 +33,24 @@ def main():
     # Aplicar estilos CSS personalizados
     st.markdown(get_custom_css(), unsafe_allow_html=True)
     
+    # SISTEMA DE AUTENTICACIÓN - Requerir login
+    require_auth()
+    
     # Mostrar header personalizado de Werfen
     st.markdown(get_werfen_header(), unsafe_allow_html=True)
     
-    # Obtener configuración de entorno
-    config = get_db_config()
+    # Mostrar información del usuario en la sidebar
+    auth_system.show_user_info()
     
-    # Mostrar información del entorno en desarrollo
-    if config.is_development():
-        st.info("**Entorno de Desarrollo** - Todas las funciones habilitadas")
-    config.show_environment_info()
+    # Obtener configuración de entorno y usuario actual
+    config = get_db_config()
+    current_user = get_current_user()
+    
+    # Mostrar información del entorno si el usuario tiene permisos de debug
+    if auth_system.has_permission('view_debug'):
+        if config.is_development():
+            st.info(f"**Entorno de Desarrollo** - Usuario: {current_user['name']}")
+        config.show_environment_info()
     
     # Inicializar base de datos
     init_database()
@@ -58,15 +67,15 @@ def main():
     """.format(get_logo_base64()), unsafe_allow_html=True)
     st.sidebar.markdown("---")  # Línea separadora
     
-    # Navegación usando selectbox (más simple y estable)
+    # Navegación usando selectbox - Basado en permisos del usuario
     if is_read_only_mode():
-        # Solo mostrar Dashboard y Clientes en producción
+        # Usuario de solo lectura - Solo Dashboard y Clientes
         page_options = ["Dashboard", "Clientes"]
-        help_text = "Modo producción - Solo dashboard y vista de clientes disponible"
+        help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
-        # Mostrar todas las opciones en desarrollo
+        # Usuario administrador - Todas las opciones
         page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias"]
-        help_text = "Selecciona la página que deseas ver"
+        help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación
     page = st.sidebar.selectbox(

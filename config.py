@@ -238,7 +238,8 @@ class DatabaseConfig:
                 'database_name': 'client_calendar.db',
                 'description': 'Base de datos en la nube (desarrollo)',
                 'backup_enabled': True,
-                'debug_mode': True
+                'debug_mode': True,
+                'fallback_to_local': True  # Permitir fallback en caso de error
             },
             'production': {
                 'type': 'cloud',
@@ -246,7 +247,8 @@ class DatabaseConfig:
                 'database_name': 'client_calendar.db',
                 'description': 'Base de datos en la nube (producción)',
                 'backup_enabled': True,
-                'debug_mode': False
+                'debug_mode': False,
+                'fallback_to_local': False  # No permitir fallback en producción
             },
             'testing': {
                 'type': 'local',
@@ -280,8 +282,33 @@ class DatabaseConfig:
         if self.db_config['type'] == 'cloud':
             import sqlitecloud
             connection_string = self.get_database_path()
+            
+            # Validar que tenemos la cadena de conexión
+            if not connection_string or connection_string == 'None':
+                print(f"[KRONOS] ERROR: SQLITECLOUD_CONNECTION_STRING no está configurada")
+                print(f"[KRONOS] Valor recibido: {connection_string}")
+                
+                # En Streamlit Cloud, intentar leer desde secrets
+                try:
+                    connection_string = st.secrets.get("SQLITECLOUD_CONNECTION_STRING")
+                    if connection_string:
+                        print(f"[KRONOS] Cadena de conexión obtenida desde st.secrets")
+                    else:
+                        raise ValueError("SQLITECLOUD_CONNECTION_STRING no encontrada en secrets")
+                except Exception as e:
+                    print(f"[KRONOS] Error leyendo desde st.secrets: {e}")
+                    raise ValueError(
+                        "❌ Error de configuración: No se pudo obtener la cadena de conexión SQLiteCloud. "
+                        "Verifica que SQLITECLOUD_CONNECTION_STRING esté configurada en las variables de entorno "
+                        "o en Streamlit Cloud Secrets."
+                    )
+            
             print(f"[KRONOS] Conectando a SQLiteCloud...")
-            return sqlitecloud.connect(connection_string)
+            try:
+                return sqlitecloud.connect(connection_string)
+            except Exception as e:
+                print(f"[KRONOS] Error conectando a SQLiteCloud: {e}")
+                raise ValueError(f"❌ Error de conexión SQLiteCloud: {str(e)}")
         else:
             # Conexión SQLite local para testing
             import sqlite3
@@ -409,6 +436,5 @@ def is_production():
     """Función helper para verificar si estamos en producción"""
     return db_config.is_production()
 
-def is_read_only_mode():
-    """Función helper para verificar si estamos en modo de solo lectura (producción)"""
-    return db_config.is_production()
+# Nota: is_read_only_mode() ahora se maneja a través del sistema de autenticación
+# Ver auth_system.py para el control de permisos basado en roles
