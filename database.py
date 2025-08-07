@@ -844,3 +844,123 @@ def update_calculated_date(client_id, activity_name, date_position, new_date):
     ''', (new_date, client_id, activity_name, date_position))
     conn.commit()
     conn.close()
+
+# === FUNCIONES DE COPIA DE FECHAS ===
+
+def get_clients_with_matching_frequencies(source_client_id):
+    """Obtiene clientes que tienen las mismas frecuencias de actividades que el cliente de origen"""
+    conn = get_db_connection()
+    try:
+        query = '''
+        SELECT DISTINCT c.id, c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor
+        FROM clients c
+        WHERE c.id != ? 
+        AND NOT EXISTS (
+            -- Verificar que no haya actividades en origen que no estén en destino con la misma frecuencia
+            SELECT 1 FROM client_activities ca_source
+            WHERE ca_source.client_id = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM client_activities ca_dest
+                WHERE ca_dest.client_id = c.id
+                AND ca_dest.activity_name = ca_source.activity_name
+                AND ca_dest.frequency_template_id = ca_source.frequency_template_id
+            )
+        )
+        AND NOT EXISTS (
+            -- Verificar que no haya actividades en destino que no estén en origen con la misma frecuencia
+            SELECT 1 FROM client_activities ca_dest
+            WHERE ca_dest.client_id = c.id
+            AND NOT EXISTS (
+                SELECT 1 FROM client_activities ca_source
+                WHERE ca_source.client_id = ?
+                AND ca_source.activity_name = ca_dest.activity_name
+                AND ca_source.frequency_template_id = ca_dest.frequency_template_id
+            )
+        )
+        ORDER BY c.name
+        '''
+        return pd.read_sql_query(query, conn, params=(source_client_id, source_client_id, source_client_id))
+    except Exception as e:
+        print(f"Error obteniendo clientes compatibles: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+def copy_dates_to_clients(source_client_id, target_client_ids):
+    """Copia las fechas del cliente origen a los clientes destino de manera optimizada"""
+    if not target_client_ids:
+        return True, "No hay clientes seleccionados"
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Obtener todas las fechas del cliente origen
+        cursor.execute('''
+            SELECT activity_name, date_position, date, is_custom
+            FROM calculated_dates 
+            WHERE client_id = ?
+            ORDER BY activity_name, date_position
+        ''', (source_client_id,))
+        
+        source_dates = cursor.fetchall()
+        
+        if not source_dates:
+            return False, "El cliente origen no tiene fechas para copiar"
+        
+        # Preparar datos para inserción batch
+        insert_data = []
+        for target_client_id in target_client_ids:
+            for activity_name, date_position, date_value, is_custom in source_dates:
+                insert_data.append((target_client_id, activity_name, date_position, date_value, is_custom))
+        
+        # Eliminar fechas existentes de los clientes destino en una sola operación
+        placeholders = ','.join(['?' for _ in target_client_ids])
+        cursor.execute(f'''
+            DELETE FROM calculated_dates 
+            WHERE client_id IN ({placeholders})
+        ''', target_client_ids)
+        
+        # Insertar nuevas fechas en batch
+        cursor.executemany('''
+            INSERT INTO calculated_dates (client_id, activity_name, date_position, date, is_custom)
+            VALUES (?, ?, ?, ?, ?)
+        ''', insert_data)
+        
+        conn.commit()
+        
+        copied_count = len(source_dates)
+        target_count = len(target_client_ids)
+        
+        return True, f"Se copiaron {copied_count} fechas a {target_count} cliente(s) exitosamente"
+        
+    except Exception as e:
+        print(f"Error copiando fechas: {e}")
+        conn.rollback()
+        return False, f"Error al copiar fechas: {str(e)}"
+    finally:
+        conn.close()
+
+def get_client_activity_summary(client_id):
+    """Obtiene un resumen de las actividades y frecuencias de un cliente"""
+    conn = get_db_connection()
+    try:
+        query = '''
+        SELECT ca.activity_name, ft.name as frequency_name
+        FROM client_activities ca
+        JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
+        WHERE ca.client_id = ?
+        ORDER BY 
+            CASE ca.activity_name
+                WHEN 'Fecha Envío OC' THEN 1
+                WHEN 'Albaranado' THEN 2
+                WHEN 'Fecha Entrega' THEN 3
+                ELSE 4
+            END
+        '''
+        return pd.read_sql_query(query, conn, params=(client_id,))
+    except Exception as e:
+        print(f"Error obteniendo resumen de actividades: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
