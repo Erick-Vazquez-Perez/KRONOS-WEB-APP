@@ -73,7 +73,7 @@ def main():
         help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
-        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias"]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación

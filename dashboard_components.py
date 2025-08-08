@@ -593,15 +593,8 @@ def show_performance_dashboard():
 
 def show_system_health():
     """Muestra una vista rápida del estado del sistema"""
-    cache_stats = get_cache_stats()
-    hit_rate = cache_stats.get('hit_rate', 0)
-    
-    if hit_rate >= 80:
-        st.success(f"Sistema funcionando óptimamente (Cache: {hit_rate:.1f}%)")
-    elif hit_rate >= 60:
-        st.info(f"Sistema funcionando normalmente (Cache: {hit_rate:.1f}%)")
-    else:
-        st.warning(f"Rendimiento del sistema bajo (Cache: {hit_rate:.1f}%) - Considere limpieza de cache")
+    # Función deshabilitada - no mostrar información de rendimiento
+    pass
     
     
 
