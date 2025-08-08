@@ -8,7 +8,7 @@ from ui_components import (
     show_add_client, 
     show_manage_frequencies
 )
-from dashboard_components import show_dashboard
+from dashboard_components import show_dashboard, show_performance_dashboard, show_system_health
 from werfen_styles import get_custom_css, get_werfen_header, get_werfen_footer
 
 # Configuración de la página
@@ -73,7 +73,7 @@ def main():
         help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
-        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación
@@ -86,6 +86,9 @@ def main():
     )
     
     st.sidebar.markdown("---")  # Línea separadora
+    
+    # Mostrar estado del sistema
+    show_system_health()
     
     # Información sobre funciones futuras
     st.sidebar.markdown("### Próximamente")
@@ -103,7 +106,9 @@ def main():
         show_add_client()
     elif page == "Administrar Frecuencias" and not is_read_only_mode():
         show_manage_frequencies()
-    elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias"]:
+    elif page == "Rendimiento Sistema" and not is_read_only_mode():
+        show_performance_dashboard()
+    elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]:
         st.error("Esta función no está disponible en modo producción")
 
 def initialize_session_state():

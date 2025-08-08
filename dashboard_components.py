@@ -3,13 +3,17 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date
-from database import get_db_connection, get_clients, get_calculated_dates
+from database import (
+    get_db_connection, get_clients, get_calculated_dates,
+    get_cache_stats, get_database_statistics, optimize_database,
+    clear_cache, get_clients_summary
+)
 from werfen_styles import get_metric_card_html
 import calendar
 from anomaly_detector import get_comprehensive_anomalies, get_holidays_for_month, get_incomplete_weeks_info
 
 def get_tomorrow_oc_clients():
-    """Obtiene clientes con fecha OC para mañana (o lunes si hoy es viernes)"""
+    """Obtiene clientes con fecha OC para mañana (o lunes si hoy es viernes) - Versión optimizada"""
     today = datetime.now().date()
     
     # Si hoy es viernes (4), mañana debe ser lunes (agregar 3 días)
@@ -469,6 +473,135 @@ def show_dashboard():
         st.success(f"No hay fechas OC programadas para {chart_month_name} {chart_year}")
     
     st.markdown("---")
+
+def show_performance_dashboard():
+    """Muestra un dashboard de rendimiento de la base de datos y cache"""
+    st.subheader("Estadísticas de Rendimiento del Sistema")
+    
+    # Obtener estadísticas
+    db_stats = get_database_statistics()
+    cache_stats = get_cache_stats()
+    
+    # Mostrar métricas principales en columnas
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="Clientes Totales",
+            value=db_stats.get('clients_count', 0)
+        )
+    
+    with col2:
+        st.metric(
+            label="Actividades Totales", 
+            value=db_stats.get('client_activities_count', 0)
+        )
+    
+    with col3:
+        st.metric(
+            label="Fechas Calculadas",
+            value=db_stats.get('calculated_dates_count', 0)
+        )
+    
+    with col4:
+        st.metric(
+            label="Plantillas de Frecuencia",
+            value=db_stats.get('frequency_templates_count', 0)
+        )
+    
+    # Estadísticas de cache
+    st.subheader("Rendimiento del Cache")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        hit_rate = cache_stats.get('hit_rate', 0)
+        color = "normal"
+        if hit_rate >= 80:
+            color = "normal" 
+        elif hit_rate >= 60:
+            color = "normal"
+        else:
+            color = "inverse"
+            
+        st.metric(
+            label="Hit Rate del Cache",
+            value=f"{hit_rate:.1f}%"
+        )
+    
+    with col2:
+        st.metric(
+            label="Cache Hits",
+            value=cache_stats.get('hits', 0)
+        )
+    
+    with col3:
+        st.metric(
+            label="Cache Misses", 
+            value=cache_stats.get('misses', 0)
+        )
+    
+    with col4:
+        st.metric(
+            label="Items en Cache",
+            value=cache_stats.get('cached_items', 0)
+        )
+    
+    # Controles de administración
+    st.subheader("Administración del Sistema")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Limpiar Cache Completo", type="secondary"):
+            clear_cache()
+            st.success("Cache limpiado exitosamente")
+            st.rerun()
+    
+    with col2:
+        if st.button("Optimizar Base de Datos", type="secondary"):
+            if optimize_database():
+                st.success("Base de datos optimizada exitosamente")
+            else:
+                st.error("Error al optimizar la base de datos")
+    
+    with col3:
+        if st.button("Actualizar Estadísticas", type="primary"):
+            st.rerun()
+    
+    # Información adicional
+    st.subheader("Información del Sistema")
+    
+    info_text = f"""
+    **Estado del Cache:**
+    - El cache está funcionando con un hit rate del {cache_stats.get('hit_rate', 0):.1f}%
+    - {'Rendimiento excelente' if cache_stats.get('hit_rate', 0) >= 80 else 'Rendimiento normal' if cache_stats.get('hit_rate', 0) >= 60 else 'Rendimiento bajo - considere limpiar cache'}
+    
+    **Recomendaciones:**
+    - Hit rate > 80%: Excelente rendimiento
+    - Hit rate 60-80%: Rendimiento normal
+    - Hit rate < 60%: Considere limpiar cache o revisar patrones de consulta
+    
+    **Optimizaciones Activas:**
+    - Connection pooling habilitado
+    - Índices de base de datos creados
+    - Cache inteligente con TTL
+    - Invalidación automática de cache
+    """
+    
+    st.info(info_text)
+
+def show_system_health():
+    """Muestra una vista rápida del estado del sistema"""
+    cache_stats = get_cache_stats()
+    hit_rate = cache_stats.get('hit_rate', 0)
+    
+    if hit_rate >= 80:
+        st.success(f"Sistema funcionando óptimamente (Cache: {hit_rate:.1f}%)")
+    elif hit_rate >= 60:
+        st.info(f"Sistema funcionando normalmente (Cache: {hit_rate:.1f}%)")
+    else:
+        st.warning(f"Rendimiento del sistema bajo (Cache: {hit_rate:.1f}%) - Considere limpieza de cache")
     
     
 

@@ -2,6 +2,9 @@ import sqlite3
 import pandas as pd
 import json
 import warnings
+import threading
+import time
+import hashlib
 from datetime import datetime, date
 from config import get_database_path, get_db_config
 
@@ -9,30 +12,147 @@ from config import get_database_path, get_db_config
 warnings.filterwarnings('ignore', message='.*SQLAlchemy.*', category=UserWarning)
 warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*', category=UserWarning)
 
-# Cache simple para consultas frecuentes
-_query_cache = {}
-_cache_timeout = 30  # 30 segundos
+# Sistema de cache mejorado con TTL y invalidación inteligente
+class DatabaseCache:
+    def __init__(self, default_ttl=60):
+        self._cache = {}
+        self._timestamps = {}
+        self._lock = threading.RLock()
+        self.default_ttl = default_ttl
+        self.hit_count = 0
+        self.miss_count = 0
+    
+    def _is_expired(self, key, custom_ttl=None):
+        """Verifica si una entrada del cache ha expirado"""
+        if key not in self._timestamps:
+            return True
+        ttl = custom_ttl or self.default_ttl
+        age = time.time() - self._timestamps[key]
+        # Debug: imprimir información de expiración
+        # print(f"[CACHE DEBUG] Clave {key[:20]}... - Edad: {age:.1f}s, TTL: {ttl}s, Expirado: {age > ttl}")
+        return age > ttl
+    
+    def get(self, key, custom_ttl=None):
+        with self._lock:
+            if key in self._cache and not self._is_expired(key, custom_ttl):
+                self.hit_count += 1
+                cached_value = self._cache[key]
+                # Hacer copia segura dependiendo del tipo
+                if isinstance(cached_value, pd.DataFrame):
+                    return cached_value.copy()
+                elif isinstance(cached_value, pd.Series):
+                    return cached_value.copy()
+                else:
+                    return cached_value
+            self.miss_count += 1
+            return None
+    
+    def set(self, key, value, custom_ttl=None):
+        with self._lock:
+            # Hacer copia segura dependiendo del tipo antes de almacenar
+            if isinstance(value, pd.DataFrame):
+                self._cache[key] = value.copy()
+            elif isinstance(value, pd.Series):
+                self._cache[key] = value.copy()
+            else:
+                self._cache[key] = value
+            self._timestamps[key] = time.time()
+    
+    def invalidate_pattern(self, pattern):
+        with self._lock:
+            keys_to_remove = [key for key in self._cache.keys() if pattern in key]
+            for key in keys_to_remove:
+                del self._cache[key]
+                del self._timestamps[key]
+    
+    def clear_all(self):
+        with self._lock:
+            self._cache.clear()
+            self._timestamps.clear()
+            self.hit_count = 0
+            self.miss_count = 0
+    
+    def get_stats(self):
+        total = self.hit_count + self.miss_count
+        hit_rate = (self.hit_count / total * 100) if total > 0 else 0
+        return {
+            'hits': self.hit_count,
+            'misses': self.miss_count,
+            'hit_rate': hit_rate,
+            'cached_items': len(self._cache)
+        }
+
+# Instancia global del cache
+_db_cache = DatabaseCache(default_ttl=60)
+
+# Connection pool simple
+class ConnectionPool:
+    def __init__(self, max_connections=5):
+        self._connections = []
+        self._max_connections = max_connections
+        self._lock = threading.RLock()
+    
+    def get_connection(self):
+        with self._lock:
+            if self._connections:
+                return self._connections.pop()
+            return get_db_connection()
+    
+    def return_connection(self, conn):
+        with self._lock:
+            if len(self._connections) < self._max_connections:
+                self._connections.append(conn)
+            else:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+_connection_pool = ConnectionPool()
 
 def clear_cache():
     """Limpia el cache de consultas"""
-    global _query_cache
-    _query_cache.clear()
+    _db_cache.clear_all()
 
 def clear_cache_pattern(pattern):
     """Limpia entradas específicas del cache que contengan el patrón"""
-    global _query_cache
-    keys_to_remove = [key for key in _query_cache.keys() if pattern in key]
-    for key in keys_to_remove:
-        del _query_cache[key]
+    _db_cache.invalidate_pattern(pattern)
+
+def get_cache_stats():
+    """Obtiene estadísticas del cache para monitoreo"""
+    return _db_cache.get_stats()
+
+def debug_cache_keys():
+    """Lista todas las claves del cache para debugging"""
+    with _db_cache._lock:
+        return list(_db_cache._cache.keys())
+
+def reset_cache_stats():
+    """Reinicia las estadísticas del cache"""
+    with _db_cache._lock:
+        _db_cache.hit_count = 0
+        _db_cache.miss_count = 0
 
 def get_db_connection():
     """Obtiene una conexión a la base de datos según el entorno"""
     config = get_db_config()
     return config.get_db_connection()
 
-def execute_query(query, params=None):
-    """Ejecuta una consulta de manera compatible con ambos tipos de BD"""
-    conn = get_db_connection()
+def get_pooled_connection():
+    """Obtiene una conexión del pool"""
+    return _connection_pool.get_connection()
+
+def return_pooled_connection(conn):
+    """Retorna una conexión al pool"""
+    _connection_pool.return_connection(conn)
+
+def execute_query(query, params=None, use_pool=True):
+    """Ejecuta una consulta de manera compatible con ambos tipos de BD con pooling opcional"""
+    if use_pool:
+        conn = get_pooled_connection()
+    else:
+        conn = get_db_connection()
+    
     try:
         if params:
             result = conn.execute(query, params)
@@ -46,26 +166,106 @@ def execute_query(query, params=None):
             conn.commit()
             return result
     finally:
+        if use_pool:
+            return_pooled_connection(conn)
+        else:
+            conn.close()
+
+def execute_batch_query(queries_with_params, use_transaction=True):
+    """Ejecuta múltiples consultas en batch para mejor rendimiento"""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if use_transaction:
+            cursor.execute("BEGIN TRANSACTION")
+        
+        results = []
+        for query, params in queries_with_params:
+            if params:
+                result = cursor.execute(query, params)
+            else:
+                result = cursor.execute(query)
+            
+            if query.strip().upper().startswith('SELECT'):
+                results.append(result.fetchall())
+            else:
+                results.append(result)
+        
+        if use_transaction:
+            conn.commit()
+        
+        return results
+        
+    except Exception as e:
+        if use_transaction:
+            conn.rollback()
+        raise e
+    finally:
+        return_pooled_connection(conn)
+
+def create_database_indexes():
+    """Crea índices para optimizar consultas frecuentes"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    indexes = [
+        # Índices para la tabla clients
+        "CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)",
+        "CREATE INDEX IF NOT EXISTS idx_clients_codigo_ag ON clients(codigo_ag)",
+        "CREATE INDEX IF NOT EXISTS idx_clients_codigo_we ON clients(codigo_we)",
+        "CREATE INDEX IF NOT EXISTS idx_clients_tipo_region ON clients(tipo_cliente, region)",
+        
+        # Índices para la tabla client_activities
+        "CREATE INDEX IF NOT EXISTS idx_client_activities_client_id ON client_activities(client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_client_activities_activity_name ON client_activities(activity_name)",
+        "CREATE INDEX IF NOT EXISTS idx_client_activities_frequency_id ON client_activities(frequency_template_id)",
+        "CREATE INDEX IF NOT EXISTS idx_client_activities_composite ON client_activities(client_id, activity_name)",
+        
+        # Índices para la tabla calculated_dates
+        "CREATE INDEX IF NOT EXISTS idx_calculated_dates_client_id ON calculated_dates(client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_calculated_dates_activity ON calculated_dates(activity_name)",
+        "CREATE INDEX IF NOT EXISTS idx_calculated_dates_date ON calculated_dates(date)",
+        "CREATE INDEX IF NOT EXISTS idx_calculated_dates_composite ON calculated_dates(client_id, activity_name, date_position)",
+        
+        # Índices para la tabla frequency_templates
+        "CREATE INDEX IF NOT EXISTS idx_frequency_templates_name ON frequency_templates(name)",
+        "CREATE INDEX IF NOT EXISTS idx_frequency_templates_type ON frequency_templates(frequency_type)",
+        "CREATE INDEX IF NOT EXISTS idx_frequency_templates_sap_code ON frequency_templates(calendario_sap_code)"
+    ]
+    
+    try:
+        for index_sql in indexes:
+            cursor.execute(index_sql)
+        
+        conn.commit()
+        print("Índices de base de datos creados exitosamente")
+        
+    except Exception as e:
+        print(f"Error creando índices: {e}")
+        conn.rollback()
+    finally:
         conn.close()
 
-def execute_query_df(query, params=None, use_cache=False):
-    """Ejecuta una consulta y devuelve un DataFrame"""
-    import time
+def execute_query_df(query, params=None, use_cache=False, cache_ttl=60):
+    """Ejecuta una consulta y devuelve un DataFrame con cache optimizado"""
     
-    # Si se solicita cache, verificar si tenemos una versión reciente
+    # Generar clave de cache
     cache_key = None
     if use_cache:
-        cache_key = f"{query}_{str(params)}"
-        if cache_key in _query_cache:
-            cached_data, timestamp = _query_cache[cache_key]
-            if time.time() - timestamp < _cache_timeout:
-                return cached_data.copy()  # Retornar copia para evitar modificaciones
+        param_str = str(params) if params else "None"
+        cache_key = hashlib.md5(f"{query}_{param_str}".encode()).hexdigest()
+        
+        # Verificar cache
+        cached_result = _db_cache.get(cache_key, cache_ttl)
+        if cached_result is not None:
+            return cached_result
     
     # Suprimir warnings temporalmente para esta consulta específica
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         
-        conn = get_db_connection()
+        conn = get_pooled_connection()
         try:
             if params:
                 df = pd.read_sql_query(query, conn, params=params)
@@ -74,11 +274,11 @@ def execute_query_df(query, params=None, use_cache=False):
             
             # Guardar en cache si se solicitó
             if use_cache and cache_key:
-                _query_cache[cache_key] = (df.copy(), time.time())
+                _db_cache.set(cache_key, df, cache_ttl)
             
             return df
         finally:
-            conn.close()
+            return_pooled_connection(conn)
 
 def get_sap_calendar_mapping():
     """Retorna el mapeo de frecuencias a códigos de calendario SAP"""
@@ -311,37 +511,73 @@ def init_database():
     
     conn.commit()
     
+    # Crear índices para optimizar consultas
+    create_database_indexes()
+    
     # Actualizar códigos SAP de frecuencias existentes
     update_frequency_sap_codes()
     
     conn.close()
 
-# === FUNCIONES DE CLIENTES ===
+# === FUNCIONES DE CLIENTES OPTIMIZADAS ===
 
-def get_clients():
-    """Obtiene todos los clientes"""
+def get_clients(use_cache=True):
+    """Obtiene todos los clientes con cache optimizado"""
     try:
-        return execute_query_df("SELECT * FROM clients", use_cache=True)
+        return execute_query_df("SELECT * FROM clients ORDER BY name", use_cache=use_cache, cache_ttl=120)
     except Exception as e:
         print(f"Error obteniendo clientes: {e}")
         return pd.DataFrame()
 
-def get_client_by_id(client_id):
-    """Obtiene un cliente por su ID - Versión mejorada"""
-    conn = get_db_connection()
+def get_clients_summary():
+    """Obtiene un resumen de clientes (solo campos básicos) para listados rápidos"""
     try:
-        # Usar fetchone directamente en lugar de pandas para mayor control
+        query = "SELECT id, name, codigo_ag, codigo_we, tipo_cliente, region FROM clients ORDER BY name"
+        return execute_query_df(query, use_cache=True, cache_ttl=300)
+    except Exception as e:
+        print(f"Error obteniendo resumen de clientes: {e}")
+        return pd.DataFrame()
+
+def get_clients_batch(client_ids):
+    """Obtiene múltiples clientes en una sola consulta"""
+    if not client_ids:
+        return pd.DataFrame()
+    
+    try:
+        placeholders = ','.join(['?' for _ in client_ids])
+        query = f"SELECT * FROM clients WHERE id IN ({placeholders}) ORDER BY name"
+        return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=60)
+    except Exception as e:
+        print(f"Error obteniendo clientes batch: {e}")
+        return pd.DataFrame()
+
+def get_client_by_id(client_id, use_cache=True):
+    """Obtiene un cliente por su ID - Versión optimizada con cache"""
+    if use_cache:
+        # Intentar obtener del cache primero
+        cache_key = f"client_{client_id}"
+        cached_client = _db_cache.get(cache_key, 60)
+        if cached_client is not None:
+            return cached_client
+    
+    conn = get_pooled_connection()
+    try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM clients WHERE id = ?", (client_id,))
         client_data = cursor.fetchone()
         
         if client_data:
-            # Obtener los nombres de las columnas
             column_names = [description[0] for description in cursor.description]
-            # Crear un diccionario con los datos
             client_dict = dict(zip(column_names, client_data))
+            client_series = pd.Series(client_dict)
+            
+            # Guardar en cache
+            if use_cache:
+                cache_key = f"client_{client_id}"
+                _db_cache.set(cache_key, client_series, 60)
+            
             print(f"Cliente encontrado: {client_dict}")
-            return pd.Series(client_dict)
+            return client_series
         else:
             print(f"No se encontró cliente con ID {client_id}")
             return None
@@ -352,11 +588,11 @@ def get_client_by_id(client_id):
         print(f"Traceback: {traceback.format_exc()}")
         return None
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
-    """Agrega un nuevo cliente"""
-    conn = get_db_connection()
+    """Agrega un nuevo cliente con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
@@ -369,8 +605,8 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_c
         conn.commit()
         print(f"Cliente {client_id} creado exitosamente")
         
-        # Limpiar cache relacionado con clientes
-        clear_cache_pattern("SELECT * FROM clients")
+        # Invalidar cache relacionado con clientes
+        _db_cache.invalidate_pattern("clients")
         
         return client_id
         
@@ -379,11 +615,11 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_c
         conn.rollback()
         return None
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
-    """Actualiza la información de un cliente"""
-    conn = get_db_connection()
+    """Actualiza la información de un cliente con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
@@ -427,21 +663,26 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
         print(f"Cliente actualizado exitosamente:")
         print(f"  Datos finales: {updated_client}")
         
-        print(f"✅ Cliente ID {client_id} actualizado exitosamente. Filas afectadas: {cursor.rowcount}")
+        print(f"Cliente ID {client_id} actualizado exitosamente. Filas afectadas: {cursor.rowcount}")
+        
+        # Invalidar cache relacionado con este cliente específico
+        _db_cache.invalidate_pattern("clients")
+        _db_cache.invalidate_pattern(f"client_{client_id}")
+        
         return True
         
     except Exception as e:
-        print(f"❌ Error actualizando cliente ID {client_id}: {e}")
+        print(f"Error actualizando cliente ID {client_id}: {e}")
         import traceback
         print(f"Traceback completo: {traceback.format_exc()}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def delete_client(client_id):
-    """Elimina un cliente y todos sus datos relacionados"""
-    conn = get_db_connection()
+    """Elimina un cliente y todos sus datos relacionados con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
@@ -455,6 +696,9 @@ def delete_client(client_id):
         
         client_name = existing_client[1]
         print(f"Eliminando cliente: ID {client_id}, Nombre: {client_name}")
+        
+        # Usar transacción para mantener consistencia
+        cursor.execute("BEGIN TRANSACTION")
         
         # Eliminar en orden para mantener integridad referencial
         # 1. Eliminar fechas calculadas
@@ -477,32 +721,60 @@ def delete_client(client_id):
             return False
         
         conn.commit()
-        print(f"✅ Cliente '{client_name}' (ID {client_id}) eliminado exitosamente")
+        print(f"Cliente '{client_name}' (ID {client_id}) eliminado exitosamente")
         print(f"  Total eliminado: 1 cliente, {deleted_activities} actividades, {deleted_dates} fechas")
+        
+        # Invalidar todo el cache relacionado con clientes y este cliente específico
+        _db_cache.invalidate_pattern("clients")
+        _db_cache.invalidate_pattern(f"client_{client_id}")
+        _db_cache.invalidate_pattern(f"activities_{client_id}")
+        _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
         return True
         
     except Exception as e:
-        print(f"❌ Error eliminando cliente ID {client_id}: {e}")
+        print(f"Error eliminando cliente ID {client_id}: {e}")
         import traceback
         print(f"Traceback completo: {traceback.format_exc()}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
-# === FUNCIONES DE FRECUENCIAS ===
+# === FUNCIONES DE FRECUENCIAS OPTIMIZADAS ===
 
-def get_frequency_templates():
-    """Obtiene todas las plantillas de frecuencias"""
+def get_frequency_templates(use_cache=True):
+    """Obtiene todas las plantillas de frecuencias con cache"""
     try:
-        return execute_query_df("SELECT * FROM frequency_templates", use_cache=True)
+        return execute_query_df("SELECT * FROM frequency_templates ORDER BY name", use_cache=use_cache, cache_ttl=300)
     except Exception as e:
         print(f"Error obteniendo frecuencias: {e}")
         return pd.DataFrame()
 
+def get_frequency_template_by_id(template_id, use_cache=True):
+    """Obtiene una plantilla de frecuencia específica"""
+    if use_cache:
+        cache_key = f"frequency_{template_id}"
+        cached_freq = _db_cache.get(cache_key, 300)
+        if cached_freq is not None:
+            return cached_freq
+    
+    try:
+        query = "SELECT * FROM frequency_templates WHERE id = ?"
+        df = execute_query_df(query, params=(template_id,))
+        
+        if not df.empty and use_cache:
+            cache_key = f"frequency_{template_id}"
+            _db_cache.set(cache_key, df.iloc[0], 300)
+            
+        return df.iloc[0] if not df.empty else None
+    except Exception as e:
+        print(f"Error obteniendo frecuencia {template_id}: {e}")
+        return None
+
 def add_frequency_template(name, frequency_type, frequency_config, description, manual_sap_code=None):
-    """Agrega una nueva plantilla de frecuencia"""
-    conn = get_db_connection()
+    """Agrega una nueva plantilla de frecuencia con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     # Usar código SAP manual si se proporciona, sino obtener automáticamente basado en el nombre
@@ -519,13 +791,17 @@ def add_frequency_template(name, frequency_type, frequency_config, description, 
         ''', (name, frequency_type, frequency_config, description, calendario_sap_code))
         conn.commit()
         print(f"Frecuencia '{name}' creada con código SAP: {calendario_sap_code}")
+        
+        # Invalidar cache de frecuencias
+        _db_cache.invalidate_pattern("frequency")
+        
         return True
     except Exception as e:
         print(f"Error agregando frecuencia: {e}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def update_frequency_template(template_id, name, frequency_type, frequency_config, description, manual_sap_code=None):
     """Actualiza una plantilla de frecuencia existente"""
@@ -606,10 +882,16 @@ def get_frequency_usage_count(template_id):
     finally:
         conn.close()
 
-# === FUNCIONES DE ACTIVIDADES ===
+# === FUNCIONES DE ACTIVIDADES OPTIMIZADAS ===
 
-def get_client_activities(client_id):
-    """Obtiene las actividades de un cliente en orden específico"""
+def get_client_activities(client_id, use_cache=True):
+    """Obtiene las actividades de un cliente en orden específico con cache"""
+    if use_cache:
+        cache_key = f"activities_{client_id}"
+        cached_activities = _db_cache.get(cache_key, 120)
+        if cached_activities is not None:
+            return cached_activities
+    
     try:
         query = '''
             SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
@@ -624,9 +906,40 @@ def get_client_activities(client_id):
                     ELSE 4
                 END
         '''
-        return execute_query_df(query, params=(client_id,), use_cache=True)
+        df = execute_query_df(query, params=(client_id,))
+        
+        if use_cache:
+            cache_key = f"activities_{client_id}"
+            _db_cache.set(cache_key, df, 120)
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo actividades del cliente {client_id}: {e}")
+        return pd.DataFrame()
+
+def get_multiple_client_activities(client_ids):
+    """Obtiene actividades de múltiples clientes en una sola consulta"""
+    if not client_ids:
+        return pd.DataFrame()
+    
+    try:
+        placeholders = ','.join(['?' for _ in client_ids])
+        query = f'''
+            SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
+            FROM client_activities ca
+            JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
+            WHERE ca.client_id IN ({placeholders})
+            ORDER BY ca.client_id,
+                CASE ca.activity_name
+                    WHEN 'Fecha Envío OC' THEN 1
+                    WHEN 'Albaranado' THEN 2
+                    WHEN 'Fecha Entrega' THEN 3
+                    ELSE 4
+                END
+        '''
+        return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=120)
+    except Exception as e:
+        print(f"Error obteniendo actividades batch: {e}")
         return pd.DataFrame()
 
 def create_default_activities(client_id):
@@ -672,8 +985,8 @@ def create_default_activities(client_id):
         conn.close()
 
 def update_client_activity_frequency(client_id, activity_name, frequency_template_id):
-    """Actualiza la frecuencia de una actividad específica"""
-    conn = get_db_connection()
+    """Actualiza la frecuencia de una actividad específica con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
@@ -689,17 +1002,20 @@ def update_client_activity_frequency(client_id, activity_name, frequency_templat
         # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
         auto_update_client_calendario_sap(client_id, activity_name, frequency_template_id)
         
+        # Invalidar cache relacionado
+        _db_cache.invalidate_pattern(f"activities_{client_id}")
+        
         return True
     except Exception as e:
         print(f"Error actualizando frecuencia: {e}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def add_client_activity(client_id, activity_name, frequency_template_id):
-    """Agrega una nueva actividad a un cliente"""
-    conn = get_db_connection()
+    """Agrega una nueva actividad a un cliente con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
@@ -714,20 +1030,26 @@ def add_client_activity(client_id, activity_name, frequency_template_id):
         # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
         auto_update_client_calendario_sap(client_id, activity_name, frequency_template_id)
         
+        # Invalidar cache relacionado
+        _db_cache.invalidate_pattern(f"activities_{client_id}")
+        
         return True
     except Exception as e:
         print(f"Error agregando actividad: {e}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def delete_client_activity(client_id, activity_name):
-    """Elimina una actividad de un cliente"""
-    conn = get_db_connection()
+    """Elimina una actividad de un cliente con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
+        # Usar transacción para mantener consistencia
+        cursor.execute("BEGIN TRANSACTION")
+        
         # Eliminar actividad
         cursor.execute('''
             DELETE FROM client_activities 
@@ -742,19 +1064,30 @@ def delete_client_activity(client_id, activity_name):
         
         conn.commit()
         print(f"Actividad {activity_name} eliminada del cliente {client_id}")
+        
+        # Invalidar cache relacionado
+        _db_cache.invalidate_pattern(f"activities_{client_id}")
+        _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
         return True
     except Exception as e:
         print(f"Error eliminando actividad: {e}")
         conn.rollback()
         return False
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
-# === FUNCIONES DE FECHAS ===
+# === FUNCIONES DE FECHAS OPTIMIZADAS ===
 
-def get_calculated_dates(client_id):
-    """Obtiene las fechas calculadas para un cliente en orden específico"""
-    conn = get_db_connection()
+def get_calculated_dates(client_id, use_cache=True):
+    """Obtiene las fechas calculadas para un cliente en orden específico con cache"""
+    if use_cache:
+        cache_key = f"dates_{client_id}"
+        cached_dates = _db_cache.get(cache_key, 60)
+        if cached_dates is not None:
+            return cached_dates
+    
+    conn = get_pooled_connection()
     try:
         dates = pd.read_sql_query('''
             SELECT * FROM calculated_dates 
@@ -768,11 +1101,15 @@ def get_calculated_dates(client_id):
                 END, 
                 date_position
         ''', conn, params=(client_id,))
+        
+        if use_cache:
+            cache_key = f"dates_{client_id}"
+            _db_cache.set(cache_key, dates, 60)
+            
     except Exception as e:
-        conn.close()
         print(f"Error en get_calculated_dates: {e}")
         init_database()
-        conn = get_db_connection()
+        conn_retry = get_pooled_connection()
         try:
             dates = pd.read_sql_query('''
                 SELECT * FROM calculated_dates 
@@ -785,23 +1122,53 @@ def get_calculated_dates(client_id):
                         ELSE 4
                     END, 
                     date_position
-            ''', conn, params=(client_id,))
+            ''', conn_retry, params=(client_id,))
         except:
             dates = pd.DataFrame()
+        finally:
+            return_pooled_connection(conn_retry)
+    finally:
+        return_pooled_connection(conn)
     
-    conn.close()
     return dates
 
+def get_multiple_calculated_dates(client_ids):
+    """Obtiene fechas calculadas de múltiples clientes en una sola consulta"""
+    if not client_ids:
+        return pd.DataFrame()
+    
+    try:
+        placeholders = ','.join(['?' for _ in client_ids])
+        query = f'''
+            SELECT * FROM calculated_dates 
+            WHERE client_id IN ({placeholders})
+            ORDER BY client_id,
+                CASE activity_name
+                    WHEN 'Fecha Envío OC' THEN 1
+                    WHEN 'Albaranado' THEN 2
+                    WHEN 'Fecha Entrega' THEN 3
+                    ELSE 4
+                END, 
+                date_position
+        '''
+        return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=60)
+    except Exception as e:
+        print(f"Error obteniendo fechas batch: {e}")
+        return pd.DataFrame()
+
 def save_calculated_dates(client_id, activity_name, dates_list):
-    """Guarda hasta 4 fechas para una actividad específica en posiciones secuenciales"""
+    """Guarda hasta 4 fechas para una actividad específica en posiciones secuenciales con invalidación de cache"""
     if not dates_list:
         print(f"No hay fechas para guardar para actividad {activity_name}")
         return
         
-    conn = get_db_connection()
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
+        # Usar transacción para operaciones atómicas
+        cursor.execute("BEGIN TRANSACTION")
+        
         # Eliminar fechas existentes para esta actividad
         cursor.execute('''
             DELETE FROM calculated_dates 
@@ -827,29 +1194,48 @@ def save_calculated_dates(client_id, activity_name, dates_list):
         conn.commit()
         print(f"Guardadas {min(len(dates_list), 4)} fechas para {activity_name} en posiciones secuenciales")
         
+        # Invalidar cache de fechas para este cliente
+        _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
     except Exception as e:
         print(f"Error guardando fechas para {activity_name}: {e}")
         conn.rollback()
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def update_calculated_date(client_id, activity_name, date_position, new_date):
-    """Actualiza una fecha específica"""
-    conn = get_db_connection()
+    """Actualiza una fecha específica con invalidación de cache"""
+    conn = get_pooled_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE calculated_dates 
-        SET date = ?, is_custom = 1
-        WHERE client_id = ? AND activity_name = ? AND date_position = ?
-    ''', (new_date, client_id, activity_name, date_position))
-    conn.commit()
-    conn.close()
+    
+    try:
+        cursor.execute('''
+            UPDATE calculated_dates 
+            SET date = ?, is_custom = 1
+            WHERE client_id = ? AND activity_name = ? AND date_position = ?
+        ''', (new_date, client_id, activity_name, date_position))
+        conn.commit()
+        
+        # Invalidar cache de fechas para este cliente
+        _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
+    except Exception as e:
+        print(f"Error actualizando fecha: {e}")
+        conn.rollback()
+    finally:
+        return_pooled_connection(conn)
 
 # === FUNCIONES DE COPIA DE FECHAS ===
 
-def get_clients_with_matching_frequencies(source_client_id):
-    """Obtiene clientes que tienen las mismas frecuencias de actividades que el cliente de origen"""
-    conn = get_db_connection()
+def get_clients_with_matching_frequencies(source_client_id, use_cache=True):
+    """Obtiene clientes que tienen las mismas frecuencias de actividades que el cliente de origen con cache"""
+    if use_cache:
+        cache_key = f"matching_frequencies_{source_client_id}"
+        cached_result = _db_cache.get(cache_key, 180)
+        if cached_result is not None:
+            return cached_result
+    
+    conn = get_pooled_connection()
     try:
         query = '''
         SELECT DISTINCT c.id, c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor
@@ -879,22 +1265,31 @@ def get_clients_with_matching_frequencies(source_client_id):
         )
         ORDER BY c.name
         '''
-        return pd.read_sql_query(query, conn, params=(source_client_id, source_client_id, source_client_id))
+        df = pd.read_sql_query(query, conn, params=(source_client_id, source_client_id, source_client_id))
+        
+        if use_cache:
+            cache_key = f"matching_frequencies_{source_client_id}"
+            _db_cache.set(cache_key, df, 180)
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo clientes compatibles: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
 def copy_dates_to_clients(source_client_id, target_client_ids):
-    """Copia las fechas del cliente origen a los clientes destino de manera optimizada"""
+    """Copia las fechas del cliente origen a los clientes destino de manera optimizada con invalidación de cache"""
     if not target_client_ids:
         return True, "No hay clientes seleccionados"
     
-    conn = get_db_connection()
+    conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
+        # Usar transacción para operaciones atómicas
+        cursor.execute("BEGIN TRANSACTION")
+        
         # Obtener todas las fechas del cliente origen
         cursor.execute('''
             SELECT activity_name, date_position, date, is_custom
@@ -906,6 +1301,7 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         source_dates = cursor.fetchall()
         
         if not source_dates:
+            conn.rollback()
             return False, "El cliente origen no tiene fechas para copiar"
         
         # Preparar datos para inserción batch
@@ -932,6 +1328,10 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         copied_count = len(source_dates)
         target_count = len(target_client_ids)
         
+        # Invalidar cache de fechas para todos los clientes afectados
+        for client_id in target_client_ids:
+            _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
         return True, f"Se copiaron {copied_count} fechas a {target_count} cliente(s) exitosamente"
         
     except Exception as e:
@@ -939,11 +1339,17 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         conn.rollback()
         return False, f"Error al copiar fechas: {str(e)}"
     finally:
-        conn.close()
+        return_pooled_connection(conn)
 
-def get_client_activity_summary(client_id):
-    """Obtiene un resumen de las actividades y frecuencias de un cliente"""
-    conn = get_db_connection()
+def get_client_activity_summary(client_id, use_cache=True):
+    """Obtiene un resumen de las actividades y frecuencias de un cliente con cache"""
+    if use_cache:
+        cache_key = f"activity_summary_{client_id}"
+        cached_summary = _db_cache.get(cache_key, 180)
+        if cached_summary is not None:
+            return cached_summary
+    
+    conn = get_pooled_connection()
     try:
         query = '''
         SELECT ca.activity_name, ft.name as frequency_name
@@ -958,9 +1364,102 @@ def get_client_activity_summary(client_id):
                 ELSE 4
             END
         '''
-        return pd.read_sql_query(query, conn, params=(client_id,))
+        df = pd.read_sql_query(query, conn, params=(client_id,))
+        
+        if use_cache:
+            cache_key = f"activity_summary_{client_id}"
+            _db_cache.set(cache_key, df, 180)
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo resumen de actividades: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        return_pooled_connection(conn)
+
+# === FUNCIONES DE ANÁLISIS Y MONITOREO ===
+
+def get_database_statistics():
+    """Obtiene estadísticas de la base de datos para monitoreo"""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Contar registros por tabla
+        tables = ['clients', 'frequency_templates', 'client_activities', 'calculated_dates']
+        for table in tables:
+            cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            stats[f"{table}_count"] = cursor.fetchone()[0]
+        
+        # Estadísticas del cache
+        cache_stats = _db_cache.get_stats()
+        stats.update(cache_stats)
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error obteniendo estadísticas: {e}")
+        return {}
+    finally:
+        return_pooled_connection(conn)
+
+def test_cache_functionality():
+    """Función para probar que el cache funciona correctamente"""
+    print("=== PRUEBA DE CACHE ===")
+    
+    # Resetear estadísticas
+    reset_cache_stats()
+    
+    # Hacer consulta inicial (debería ser MISS)
+    print("1. Primera consulta (esperamos MISS):")
+    clients1 = get_clients(use_cache=True)
+    stats1 = get_cache_stats()
+    print(f"   Estadísticas: {stats1}")
+    
+    # Hacer segunda consulta (debería ser HIT)
+    print("2. Segunda consulta (esperamos HIT):")
+    clients2 = get_clients(use_cache=True)
+    stats2 = get_cache_stats()
+    print(f"   Estadísticas: {stats2}")
+    
+    # Probar cache específico de cliente
+    if not clients1.empty:
+        client_id = clients1.iloc[0]['id']
+        print(f"3. Consulta cliente ID {client_id} (esperamos MISS):")
+        client1 = get_client_by_id(client_id, use_cache=True)
+        stats3 = get_cache_stats()
+        print(f"   Estadísticas: {stats3}")
+        
+        print(f"4. Segunda consulta cliente ID {client_id} (esperamos HIT):")
+        client2 = get_client_by_id(client_id, use_cache=True)
+        stats4 = get_cache_stats()
+        print(f"   Estadísticas: {stats4}")
+    
+    # Mostrar claves del cache
+    cache_keys = debug_cache_keys()
+    print(f"5. Claves en cache: {cache_keys}")
+    
+    return get_cache_stats()
+
+def optimize_database():
+    """Ejecuta comandos de optimización de la base de datos"""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Analizar tablas para actualizar estadísticas del optimizador
+        cursor.execute("ANALYZE")
+        
+        # Vacuum para limpiar espacio no utilizado
+        cursor.execute("VACUUM")
+        
+        print("Optimización de base de datos completada")
+        return True
+        
+    except Exception as e:
+        print(f"Error en optimización de BD: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)

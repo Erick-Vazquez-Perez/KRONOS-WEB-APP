@@ -5,13 +5,14 @@ import pandas as pd
 from datetime import datetime, timedelta
 from auth_system import auth_system, require_permission, is_read_only_mode
 from database import (
-    get_clients, get_client_by_id, add_client, update_client, delete_client,
+    get_clients, get_clients_summary, get_clients_batch, get_client_by_id, 
+    add_client, update_client, delete_client,
     get_frequency_templates, add_frequency_template, update_frequency_template,
     delete_frequency_template, get_frequency_usage_count,
-    get_client_activities, update_client_activity_frequency,
+    get_client_activities, get_multiple_client_activities, update_client_activity_frequency,
     add_client_activity, delete_client_activity,
-    get_calculated_dates, save_calculated_dates, update_calculated_date,
-    get_db_connection,
+    get_calculated_dates, get_multiple_calculated_dates, save_calculated_dates, update_calculated_date,
+    get_db_connection, get_cache_stats, clear_cache_pattern,
     get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary
 )
 from date_calculator import recalculate_client_dates
@@ -38,7 +39,7 @@ def show_clients_gallery():
     if 'show_client_detail' in st.session_state:
         st.session_state.show_client_detail = False
     
-    clients = get_clients()
+    clients = get_clients(use_cache=True)
     
     if clients.empty:
         st.info("No hay clientes registrados. Agrega un cliente para comenzar.")
