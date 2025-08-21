@@ -522,42 +522,80 @@ def init_database():
 # === FUNCIONES DE CLIENTES OPTIMIZADAS ===
 
 def get_clients(use_cache=True):
-    """Obtiene todos los clientes con cache optimizado"""
+    """Obtiene todos los clientes con cache optimizado y filtro por país"""
+    from auth_system import get_user_country_filter
+    
     try:
-        return execute_query_df("SELECT * FROM clients ORDER BY name", use_cache=use_cache, cache_ttl=120)
+        # Obtener todos los clientes
+        df = execute_query_df("SELECT * FROM clients ORDER BY name", use_cache=use_cache, cache_ttl=120)
+        
+        # Aplicar filtro de país si el usuario lo tiene
+        country_filter = get_user_country_filter()
+        if country_filter:
+            # Filtrar solo clientes del país específico
+            df = df[df['pais'] == country_filter] if not df.empty and 'pais' in df.columns else df
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo clientes: {e}")
         return pd.DataFrame()
 
 def get_clients_summary():
-    """Obtiene un resumen de clientes (solo campos básicos) para listados rápidos"""
+    """Obtiene un resumen de clientes (solo campos básicos) para listados rápidos con filtro por país"""
+    from auth_system import get_user_country_filter
+    
     try:
-        query = "SELECT id, name, codigo_ag, codigo_we, tipo_cliente, region FROM clients ORDER BY name"
-        return execute_query_df(query, use_cache=True, cache_ttl=300)
+        query = "SELECT id, name, codigo_ag, codigo_we, tipo_cliente, region, pais FROM clients ORDER BY name"
+        df = execute_query_df(query, use_cache=True, cache_ttl=300)
+        
+        # Aplicar filtro de país si el usuario lo tiene
+        country_filter = get_user_country_filter()
+        if country_filter:
+            # Filtrar solo clientes del país específico
+            df = df[df['pais'] == country_filter] if not df.empty and 'pais' in df.columns else df
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo resumen de clientes: {e}")
         return pd.DataFrame()
 
 def get_clients_batch(client_ids):
-    """Obtiene múltiples clientes en una sola consulta"""
+    """Obtiene múltiples clientes en una sola consulta con filtro por país"""
+    from auth_system import get_user_country_filter
+    
     if not client_ids:
         return pd.DataFrame()
     
     try:
         placeholders = ','.join(['?' for _ in client_ids])
         query = f"SELECT * FROM clients WHERE id IN ({placeholders}) ORDER BY name"
-        return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=60)
+        df = execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=60)
+        
+        # Aplicar filtro de país si el usuario lo tiene
+        country_filter = get_user_country_filter()
+        if country_filter:
+            # Filtrar solo clientes del país específico
+            df = df[df['pais'] == country_filter] if not df.empty and 'pais' in df.columns else df
+        
+        return df
     except Exception as e:
         print(f"Error obteniendo clientes batch: {e}")
         return pd.DataFrame()
 
 def get_client_by_id(client_id, use_cache=True):
-    """Obtiene un cliente por su ID - Versión optimizada con cache"""
+    """Obtiene un cliente por su ID - Versión optimizada con cache y filtro por país"""
+    from auth_system import get_user_country_filter
+    
     if use_cache:
         # Intentar obtener del cache primero
         cache_key = f"client_{client_id}"
         cached_client = _db_cache.get(cache_key, 60)
         if cached_client is not None:
+            # Verificar filtro de país si existe
+            country_filter = get_user_country_filter()
+            if country_filter:
+                if cached_client.get('pais') != country_filter:
+                    return None  # Cliente no accesible para este usuario
             return cached_client
     
     conn = get_pooled_connection()
@@ -570,6 +608,12 @@ def get_client_by_id(client_id, use_cache=True):
             column_names = [description[0] for description in cursor.description]
             client_dict = dict(zip(column_names, client_data))
             client_series = pd.Series(client_dict)
+            
+            # Verificar filtro de país
+            country_filter = get_user_country_filter()
+            if country_filter:
+                if client_dict.get('pais') != country_filter:
+                    return None  # Cliente no accesible para este usuario
             
             # Guardar en cache
             if use_cache:
@@ -590,16 +634,16 @@ def get_client_by_id(client_id, use_cache=True):
     finally:
         return_pooled_connection(conn)
 
-def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
+def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia'):
     """Agrega un nuevo cliente con invalidación de cache"""
     conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute('''
-            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region))
+            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais))
         client_id = cursor.lastrowid
         
         conn.commit()
@@ -617,7 +661,7 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_c
     finally:
         return_pooled_connection(conn)
 
-def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro'):
+def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia'):
     """Actualiza la información de un cliente con invalidación de cache"""
     conn = get_pooled_connection()
     cursor = conn.cursor()
@@ -641,13 +685,14 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
         print(f"  Calendario SAP: '{calendario_sap}'")
         print(f"  Tipo Cliente: '{tipo_cliente}'")
         print(f"  Región: '{region}'")
+        print(f"  País: '{pais}'")
         
         # Realizar la actualización
         cursor.execute('''
             UPDATE clients 
-            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?, tipo_cliente = ?, region = ?
+            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?, tipo_cliente = ?, region = ?, pais = ?
             WHERE id = ?
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, client_id))
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais, client_id))
         
         # Verificar que se actualizó al menos una fila
         if cursor.rowcount == 0:

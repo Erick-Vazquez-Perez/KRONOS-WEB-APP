@@ -11,9 +11,11 @@ from database import (
 from werfen_styles import get_metric_card_html
 import calendar
 from anomaly_detector import get_comprehensive_anomalies, get_holidays_for_month, get_incomplete_weeks_info
+from auth_system import get_user_country_filter, has_country_filter, auth_system
+from client_constants import get_paises
 
-def get_tomorrow_oc_clients():
-    """Obtiene clientes con fecha OC para mañana (o lunes si hoy es viernes) - Versión optimizada"""
+def get_tomorrow_oc_clients(country_filter=None):
+    """Obtiene clientes con fecha OC para mañana (o lunes si hoy es viernes) - Versión optimizada con filtro por país"""
     today = datetime.now().date()
     
     # Si hoy es viernes (4), mañana debe ser lunes (agregar 3 días)
@@ -23,22 +25,36 @@ def get_tomorrow_oc_clients():
         target_date = today + timedelta(days=1)  # Mañana normal
     
     conn = get_db_connection()
-    query = """
-    SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap
-    FROM clients c
-    JOIN calculated_dates cd ON c.id = cd.client_id
-    WHERE cd.activity_name = 'Fecha Envío OC' 
-    AND date(cd.date) = ?
-    ORDER BY c.name
-    """
     
-    df = pd.read_sql_query(query, conn, params=(target_date.strftime('%Y-%m-%d'),))
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_name = 'Fecha Envío OC' 
+        AND date(cd.date) = ?
+        AND c.pais = ?
+        ORDER BY c.name
+        """
+        df = pd.read_sql_query(query, conn, params=(target_date.strftime('%Y-%m-%d'), country_filter))
+    else:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_name = 'Fecha Envío OC' 
+        AND date(cd.date) = ?
+        ORDER BY c.name
+        """
+        df = pd.read_sql_query(query, conn, params=(target_date.strftime('%Y-%m-%d'),))
+    
     conn.close()
     
     return df
 
-def get_delivery_anomalies():
-    """Obtiene clientes donde la fecha de albaranado es mayor que la de entrega - solo del mes actual"""
+def get_delivery_anomalies(country_filter=None):
+    """Obtiene clientes donde la fecha de albaranado es mayor que la de entrega - solo del mes actual con filtro por país"""
     conn = get_db_connection()
     
     # Obtener primer y último día del mes actual
@@ -49,41 +65,76 @@ def get_delivery_anomalies():
     else:
         last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
-    query = """
-    SELECT 
-        c.name, 
-        c.codigo_ag, 
-        c.codigo_we, 
-        c.csr, 
-        c.vendedor,
-        c.tipo_cliente,
-        c.region,
-        alb.date as fecha_albaranado,
-        ent.date as fecha_entrega,
-        alb.date_position as pos_albaranado,
-        ent.date_position as pos_entrega
-    FROM clients c
-    JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
-    JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
-                                AND alb.date_position = ent.date_position
-    WHERE date(alb.date) > date(ent.date)
-    AND (
-        (date(alb.date) >= ? AND date(alb.date) <= ?) OR
-        (date(ent.date) >= ? AND date(ent.date) <= ?)
-    )
-    ORDER BY c.name, alb.date_position
-    """
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT 
+            c.name, 
+            c.codigo_ag, 
+            c.codigo_we, 
+            c.csr, 
+            c.vendedor,
+            c.tipo_cliente,
+            c.region,
+            c.pais,
+            alb.date as fecha_albaranado,
+            ent.date as fecha_entrega,
+            alb.date_position as pos_albaranado,
+            ent.date_position as pos_entrega
+        FROM clients c
+        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
+        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
+                                    AND alb.date_position = ent.date_position
+        WHERE date(alb.date) > date(ent.date)
+        AND c.pais = ?
+        AND (
+            (date(alb.date) >= ? AND date(alb.date) <= ?) OR
+            (date(ent.date) >= ? AND date(ent.date) <= ?)
+        )
+        ORDER BY c.name, alb.date_position
+        """
+        df = pd.read_sql_query(query, conn, params=(
+            country_filter,
+            first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
+            first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
+        ))
+    else:
+        query = """
+        SELECT 
+            c.name, 
+            c.codigo_ag, 
+            c.codigo_we, 
+            c.csr, 
+            c.vendedor,
+            c.tipo_cliente,
+            c.region,
+            c.pais,
+            alb.date as fecha_albaranado,
+            ent.date as fecha_entrega,
+            alb.date_position as pos_albaranado,
+            ent.date_position as pos_entrega
+        FROM clients c
+        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
+        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
+                                    AND alb.date_position = ent.date_position
+        WHERE date(alb.date) > date(ent.date)
+        AND (
+            (date(alb.date) >= ? AND date(alb.date) <= ?) OR
+            (date(ent.date) >= ? AND date(ent.date) <= ?)
+        )
+        ORDER BY c.name, alb.date_position
+        """
+        df = pd.read_sql_query(query, conn, params=(
+            first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
+            first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
+        ))
     
-    df = pd.read_sql_query(query, conn, params=(
-        first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
-        first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
-    ))
     conn.close()
     
     return df
 
-def get_monthly_oc_data(year, month):
-    """Obtiene los datos de fechas OC para un mes específico"""
+def get_monthly_oc_data(year, month, country_filter=None):
+    """Obtiene los datos de fechas OC para un mes específico con filtro por país"""
     conn = get_db_connection()
     
     # Crear las fechas de inicio y fin del mes
@@ -93,19 +144,35 @@ def get_monthly_oc_data(year, month):
     else:
         end_date = date(year, month + 1, 1) - timedelta(days=1)
     
-    query = """
-    SELECT 
-        cd.date,
-        COUNT(*) as cantidad_oc
-    FROM calculated_dates cd
-    JOIN clients c ON c.id = cd.client_id
-    WHERE cd.activity_name = 'Fecha Envío OC' 
-    AND date(cd.date) >= ? AND date(cd.date) <= ?
-    GROUP BY date(cd.date)
-    ORDER BY date(cd.date)
-    """
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT 
+            cd.date,
+            COUNT(*) as cantidad_oc
+        FROM calculated_dates cd
+        JOIN clients c ON c.id = cd.client_id
+        WHERE cd.activity_name = 'Fecha Envío OC' 
+        AND date(cd.date) >= ? AND date(cd.date) <= ?
+        AND c.pais = ?
+        GROUP BY date(cd.date)
+        ORDER BY date(cd.date)
+        """
+        df = pd.read_sql_query(query, conn, params=(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), country_filter))
+    else:
+        query = """
+        SELECT 
+            cd.date,
+            COUNT(*) as cantidad_oc
+        FROM calculated_dates cd
+        JOIN clients c ON c.id = cd.client_id
+        WHERE cd.activity_name = 'Fecha Envío OC' 
+        AND date(cd.date) >= ? AND date(cd.date) <= ?
+        GROUP BY date(cd.date)
+        ORDER BY date(cd.date)
+        """
+        df = pd.read_sql_query(query, conn, params=(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     
-    df = pd.read_sql_query(query, conn, params=(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     conn.close()
     
     # Convertir fecha a datetime para mejor manejo
@@ -115,22 +182,37 @@ def get_monthly_oc_data(year, month):
     
     return df
 
-def get_activity_counts():
-    """Obtiene el conteo de fechas por tipo de actividad"""
+def get_activity_counts(country_filter=None):
+    """Obtiene el conteo de fechas por tipo de actividad con filtro por país"""
     conn = get_db_connection()
     
-    query = """
-    SELECT 
-        cd.activity_name,
-        COUNT(*) as total_fechas,
-        COUNT(DISTINCT cd.client_id) as clientes_con_actividad
-    FROM calculated_dates cd
-    JOIN clients c ON c.id = cd.client_id
-    GROUP BY cd.activity_name
-    ORDER BY total_fechas DESC
-    """
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT 
+            cd.activity_name,
+            COUNT(*) as total_fechas,
+            COUNT(DISTINCT cd.client_id) as clientes_con_actividad
+        FROM calculated_dates cd
+        JOIN clients c ON c.id = cd.client_id
+        WHERE c.pais = ?
+        GROUP BY cd.activity_name
+        ORDER BY total_fechas DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(country_filter,))
+    else:
+        query = """
+        SELECT 
+            cd.activity_name,
+            COUNT(*) as total_fechas,
+            COUNT(DISTINCT cd.client_id) as clientes_con_actividad
+        FROM calculated_dates cd
+        JOIN clients c ON c.id = cd.client_id
+        GROUP BY cd.activity_name
+        ORDER BY total_fechas DESC
+        """
+        df = pd.read_sql_query(query, conn)
     
-    df = pd.read_sql_query(query, conn)
     conn.close()
     
     return df
@@ -208,6 +290,47 @@ def show_dashboard():
     st.header("Dashboard Kronos")
     st.markdown("*Vista general de las actividades y fechas programadas*")
     
+    # ========== SELECTOR DE PAÍS PARA ADMINISTRADORES ==========
+    
+    # Determinar el filtro de país a usar
+    dashboard_country_filter = None
+    
+    # Si el usuario tiene un filtro de país fijo (como GLCOUser)
+    if has_country_filter():
+        dashboard_country_filter = get_user_country_filter()
+        st.info(f"🌍 Vista filtrada: Dashboard de **{dashboard_country_filter}**")
+    
+    # Si es administrador, mostrar selector de país
+    elif auth_system.is_admin():
+        st.subheader("Configuración del Dashboard")
+        
+        col1, col2 = st.columns([2, 4])
+        with col1:
+            paises_options = ['Todos los países'] + get_paises()
+            selected_country = st.selectbox(
+                "Filtrar dashboard por país:",
+                paises_options,
+                index=0,
+                key="dashboard_country_filter",
+                help="Selecciona un país para filtrar todos los datos del dashboard"
+            )
+            
+            if selected_country != 'Todos los países':
+                dashboard_country_filter = selected_country
+        
+        with col2:
+            if dashboard_country_filter:
+                st.success(f"📊 Mostrando datos de: **{dashboard_country_filter}**")
+            else:
+                st.info("📊 Mostrando datos de **todos los países**")
+        
+        st.divider()
+    
+    # Para otros usuarios (kronosuser), no hay selector pero tampoco filtro fijo
+    else:
+        # kronosuser ve todos los países pero sin selector
+        pass
+    
     # ========== TABLAS DE ALERTAS (PRIMERA SECCIÓN) ==========
     
     col1, col2 = st.columns(2)
@@ -216,7 +339,7 @@ def show_dashboard():
         st.subheader("Fechas OC de Mañana")
         
         # Obtener clientes con fecha OC de mañana
-        tomorrow_oc_clients = get_tomorrow_oc_clients()
+        tomorrow_oc_clients = get_tomorrow_oc_clients(dashboard_country_filter)
         
         if not tomorrow_oc_clients.empty:
             st.info(f"**{len(tomorrow_oc_clients)} clientes** tienen fecha OC mañana")
@@ -231,19 +354,28 @@ def show_dashboard():
                 'csr': 'CSR',
                 'vendedor': 'Vendedor',
                 'calendario_sap': 'Cal. SAP',
-                'date': 'Fecha OC'
+                'date': 'Fecha OC',
+                'pais': 'País'
             })
             
             # Seleccionar columnas clave para mostrar
-            key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
+            if dashboard_country_filter:
+                # Si hay filtro de país, no mostrar la columna país (todos son del mismo país)
+                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
+            else:
+                # Si no hay filtro, mostrar la columna país
+                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'País', 'Fecha OC']
+            
             display_df = display_df[key_columns]
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
-            st.success("No hay fechas OC programadas para mañana")
+            country_text = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+            st.success(f"No hay fechas OC programadas para mañana{country_text}")
     
     with col2:
-        st.subheader("Anomalías y Alertas del Mes")
+        anomaly_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+        st.subheader(f"Anomalías y Alertas del Mes{anomaly_suffix}")
         
         # Obtener el mes y año actual
         current_date = datetime.now()
@@ -252,7 +384,7 @@ def show_dashboard():
         current_month_name = current_date.strftime('%B')
         
         # Obtener anomalías completas
-        anomalies = get_comprehensive_anomalies(current_year, current_month)
+        anomalies = get_comprehensive_anomalies(current_year, current_month, dashboard_country_filter)
         
         # Contar total de anomalías (sin incluir delivery_anomalies)
         total_anomalies = (
@@ -278,7 +410,8 @@ def show_dashboard():
                     if week_info['affected_weekdays']:
                         st.info(f"**{current_month_name}** tiene semanas incompletas que afectan: {', '.join(week_info['affected_weekdays'])}")
                     
-                    st.warning(f"**{len(incomplete_anomalies)} clientes** pueden verse afectados por semanas incompletas")
+                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    st.warning(f"**{len(incomplete_anomalies)} clientes**{country_info} pueden verse afectados por semanas incompletas")
                     
                     display_df = incomplete_anomalies.copy()
                     display_df['fecha_albaranado'] = pd.to_datetime(display_df['fecha_albaranado']).dt.strftime('%d/%m/%Y')
@@ -298,7 +431,8 @@ def show_dashboard():
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
                 else:
-                    st.success("No hay clientes afectados por semanas incompletas")
+                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    st.success(f"No hay clientes{country_info} afectados por semanas incompletas")
             
             # Tab 2: Anomalías por días festivos
             with tab2:
@@ -310,7 +444,8 @@ def show_dashboard():
                         holiday_text = ", ".join([f"{h[0].strftime('%d/%m')} ({h[1]})" for h in holidays])
                         st.info(f"**Festivos en {current_month_name}:** {holiday_text}")
                     
-                    st.warning(f"**{len(holiday_anomalies)} clientes** con albaranado en días festivos")
+                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    st.warning(f"**{len(holiday_anomalies)} clientes**{country_info} con albaranado en días festivos")
                     
                     display_df = holiday_anomalies.copy()
                     display_df['fecha_albaranado'] = pd.to_datetime(display_df['fecha_albaranado']).dt.strftime('%d/%m/%Y')
@@ -329,7 +464,8 @@ def show_dashboard():
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
                 else:
-                    st.success("No hay clientes con albaranado en días festivos")
+                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    st.success(f"No hay clientes{country_info} con albaranado en días festivos")
             
             # Tab 3: Resumen
             with tab3:
@@ -352,7 +488,8 @@ def show_dashboard():
                 st.markdown(f"**Total de clientes únicos afectados:** {anomalies['total_affected_clients']}")
                 
         else:
-            st.success(f"No se detectaron anomalías para {current_month_name} {current_year}")
+            country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+            st.success(f"No se detectaron anomalías{country_info} para {current_month_name} {current_year}")
         
         # Botón para gestión de festivos (solo en desarrollo)
         from config import is_development
@@ -371,10 +508,11 @@ def show_dashboard():
     st.markdown("---")
     
     # ========== TARJETAS DE MÉTRICAS ==========
-    st.subheader("Métricas Generales")
+    country_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+    st.subheader(f"Métricas Generales{country_suffix}")
     
     # Obtener datos para las métricas
-    activity_counts = get_activity_counts()
+    activity_counts = get_activity_counts(dashboard_country_filter)
     
     # Crear diccionario de métricas
     metrics = {}
@@ -420,7 +558,8 @@ def show_dashboard():
     st.markdown("---")
     
     # ========== SELECTOR Y GRÁFICO DE FECHAS OC ==========
-    st.subheader("Análisis de Fechas OC por Mes")
+    analysis_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+    st.subheader(f"Análisis de Fechas OC por Mes{analysis_suffix}")
     
     # Selector de año y mes
     col_year, col_month = st.columns(2)
@@ -449,28 +588,32 @@ def show_dashboard():
     selected_date = date(chart_year, chart_month, 1)
     current_month_date = date(current_date.year, current_date.month, 1)
     
+    country_text = f" ({dashboard_country_filter})" if dashboard_country_filter else ""
+    
     if selected_date < current_month_date:
-        chart_subtitle = f"Fechas OC del mes vencido ({chart_month_name} {chart_year})"
+        chart_subtitle = f"Fechas OC del mes vencido ({chart_month_name} {chart_year}){country_text}"
     elif selected_date > current_month_date:
-        chart_subtitle = f"Fechas OC del mes próximo ({chart_month_name} {chart_year})"
+        chart_subtitle = f"Fechas OC del mes próximo ({chart_month_name} {chart_year}){country_text}"
     else:
-        chart_subtitle = f"Fechas OC del mes actual ({chart_month_name} {chart_year})"
+        chart_subtitle = f"Fechas OC del mes actual ({chart_month_name} {chart_year}){country_text}"
     
     st.subheader(chart_subtitle)
     
     # Obtener datos del mes seleccionado para la gráfica
-    monthly_data = get_monthly_oc_data(chart_year, chart_month)
+    monthly_data = get_monthly_oc_data(chart_year, chart_month, dashboard_country_filter)
     
     if not monthly_data.empty:
         total_oc_month = monthly_data['cantidad_oc'].sum()
-        st.info(f"**{total_oc_month} fechas OC** programadas en {chart_month_name} {chart_year}")
+        country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+        st.info(f"**{total_oc_month} fechas OC** programadas en {chart_month_name} {chart_year}{country_info}")
         
         # Mostrar gráfico de línea del mes
         line_chart = create_oc_line_chart(monthly_data, chart_month_name)
         st.plotly_chart(line_chart, use_container_width=True)
         
     else:
-        st.success(f"No hay fechas OC programadas para {chart_month_name} {chart_year}")
+        country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+        st.success(f"No hay fechas OC programadas para {chart_month_name} {chart_year}{country_info}")
     
     st.markdown("---")
 

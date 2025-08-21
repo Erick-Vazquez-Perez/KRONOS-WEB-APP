@@ -126,7 +126,7 @@ def get_weekday_from_frequency_name(frequency_name):
     
     return None
 
-def get_comprehensive_anomalies(year=None, month=None):
+def get_comprehensive_anomalies(year=None, month=None, country_filter=None):
     """
     Obtiene anomalías completas incluyendo:
     1. Fechas de albaranado posteriores a entrega
@@ -141,13 +141,13 @@ def get_comprehensive_anomalies(year=None, month=None):
     conn = get_db_connection()
     
     # 1. Anomalías tradicionales (albaranado > entrega)
-    delivery_anomalies = get_delivery_anomalies_detailed(conn, year, month)
+    delivery_anomalies = get_delivery_anomalies_detailed(conn, year, month, country_filter)
     
     # 2. Anomalías por semanas incompletas
-    incomplete_week_anomalies = get_incomplete_week_anomalies(conn, year, month)
+    incomplete_week_anomalies = get_incomplete_week_anomalies(conn, year, month, country_filter)
     
     # 3. Anomalías por días festivos
-    holiday_anomalies = get_holiday_anomalies(conn, year, month)
+    holiday_anomalies = get_holiday_anomalies(conn, year, month, country_filter)
     
     conn.close()
     
@@ -167,12 +167,20 @@ def get_delivery_anomalies():
     anomalies = get_comprehensive_anomalies(current_date.year, current_date.month)
     return anomalies['delivery_anomalies']
 
-def get_delivery_anomalies_detailed(conn, year, month):
+def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
     """Obtiene anomalías de entrega detalladas para un mes específico"""
     first_day = date(year, month, 1)
     last_day = date(year, month, calendar.monthrange(year, month)[1])
     
-    query = """
+    # Construir la query con filtro de país opcional
+    country_condition = ""
+    params = [first_day, last_day, first_day, last_day]
+    
+    if country_filter:
+        country_condition = "AND c.pais = ?"
+        params.append(country_filter)
+    
+    query = f"""
     SELECT 
         c.id as client_id,
         c.name, 
@@ -182,6 +190,7 @@ def get_delivery_anomalies_detailed(conn, year, month):
         c.vendedor,
         c.tipo_cliente,
         c.region,
+        c.pais,
         alb.date as fecha_albaranado,
         ent.date as fecha_entrega,
         alb.date_position as pos_albaranado,
@@ -195,17 +204,15 @@ def get_delivery_anomalies_detailed(conn, year, month):
         (date(alb.date) >= ? AND date(alb.date) <= ?) OR
         (date(ent.date) >= ? AND date(ent.date) <= ?)
     )
+    {country_condition}
     ORDER BY c.name, alb.date_position
     """
     
-    df = pd.read_sql_query(query, conn, params=(
-        first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
-        first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
-    ))
+    df = pd.read_sql_query(query, conn, params=params)
     
     return df
 
-def get_incomplete_week_anomalies(conn, year, month):
+def get_incomplete_week_anomalies(conn, year, month, country_filter=None):
     """
     Obtiene clientes con albaranado que se verán afectados por semanas incompletas
     """
@@ -215,8 +222,18 @@ def get_incomplete_week_anomalies(conn, year, month):
     if not affected_weekdays:
         return pd.DataFrame()
     
+    # Construir la query con filtro de país opcional
+    country_condition = ""
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
+    params = [first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')]
+    
+    if country_filter:
+        country_condition = "AND c.pais = ?"
+        params.append(country_filter)
+
     # Obtener clientes con actividad Albaranado y sus frecuencias
-    query = """
+    query = f"""
     SELECT DISTINCT
         c.id as client_id,
         c.name,
@@ -226,6 +243,7 @@ def get_incomplete_week_anomalies(conn, year, month):
         c.vendedor,
         c.tipo_cliente,
         c.region,
+        c.pais,
         ft.name as frequency_name,
         cd.date as fecha_albaranado,
         cd.date_position
@@ -234,16 +252,11 @@ def get_incomplete_week_anomalies(conn, year, month):
     JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
     JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_name = 'Albaranado'
     WHERE date(cd.date) >= ? AND date(cd.date) <= ?
+    {country_condition}
     ORDER BY c.name, cd.date_position
     """
     
-    first_day = date(year, month, 1)
-    last_day = date(year, month, calendar.monthrange(year, month)[1])
-    
-    df = pd.read_sql_query(query, conn, params=(
-        first_day.strftime('%Y-%m-%d'), 
-        last_day.strftime('%Y-%m-%d')
-    ))
+    df = pd.read_sql_query(query, conn, params=params)
     
     # Filtrar solo los clientes cuya frecuencia coincida con días afectados
     if not df.empty:
@@ -255,7 +268,7 @@ def get_incomplete_week_anomalies(conn, year, month):
     
     return df
 
-def get_holiday_anomalies(conn, year, month):
+def get_holiday_anomalies(conn, year, month, country_filter=None):
     """
     Obtiene clientes con fechas de albaranado que caen en días festivos
     """
@@ -271,6 +284,14 @@ def get_holiday_anomalies(conn, year, month):
     # Placeholders para la query
     placeholders = ','.join(['?' for _ in holiday_dates])
     
+    # Construir filtro de país opcional
+    country_condition = ""
+    params = holiday_dates.copy()
+    
+    if country_filter:
+        country_condition = "AND c.pais = ?"
+        params.append(country_filter)
+    
     query = f"""
     SELECT DISTINCT
         c.id as client_id,
@@ -281,15 +302,17 @@ def get_holiday_anomalies(conn, year, month):
         c.vendedor,
         c.tipo_cliente,
         c.region,
+        c.pais,
         cd.date as fecha_albaranado,
         cd.date_position
     FROM clients c
     JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_name = 'Albaranado'
     WHERE date(cd.date) IN ({placeholders})
+    {country_condition}
     ORDER BY c.name, cd.date_position
     """
     
-    df = pd.read_sql_query(query, conn, params=holiday_dates)
+    df = pd.read_sql_query(query, conn, params=params)
     
     # Agregar descripción del festivo
     if not df.empty:
