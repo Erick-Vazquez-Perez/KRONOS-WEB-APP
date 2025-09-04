@@ -180,6 +180,7 @@ def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
         country_condition = "AND c.pais = ?"
         params.append(country_filter)
     
+    # Incluir información de calendario SAP y descripción de frecuencias para Albaranado
     query = f"""
     SELECT 
         c.id as client_id,
@@ -191,6 +192,12 @@ def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
         c.tipo_cliente,
         c.region,
         c.pais,
+        c.calendario_sap,
+        ft_alb.name as frequency_name_albaranado,
+        ft_alb.description as frequency_description_albaranado,
+        ft_alb.calendario_sap_code as calendario_sap_code_albaranado,
+        ft_alb.frequency_type as frequency_type_albaranado,
+        ft_alb.frequency_config as frequency_config_albaranado,
         alb.date as fecha_albaranado,
         ent.date as fecha_entrega,
         alb.date_position as pos_albaranado,
@@ -199,6 +206,8 @@ def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
     JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
     JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
                                 AND alb.date_position = ent.date_position
+    LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+    LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
     WHERE date(alb.date) > date(ent.date)
     AND (
         (date(alb.date) >= ? AND date(alb.date) <= ?) OR
@@ -209,6 +218,27 @@ def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
     """
     
     df = pd.read_sql_query(query, conn, params=params)
+    
+    # Agregar información formateada de calendario SAP para anomalías de entrega
+    if not df.empty:
+        # Importar la función para formatear la descripción de frecuencia
+        from calendar_utils import format_frequency_description
+        
+        # Formatear la descripción de frecuencia usando la función utilitaria
+        df['formatted_frequency_description'] = df.apply(
+            lambda row: format_frequency_description(row['frequency_type_albaranado'], row['frequency_config_albaranado'])
+            if pd.notna(row['frequency_type_albaranado']) and pd.notna(row['frequency_config_albaranado'])
+            else row.get('frequency_description_albaranado', ''),
+            axis=1
+        )
+        
+        # Crear la descripción completa del calendario SAP con frecuencia
+        df['calendario_sap_full'] = df.apply(
+            lambda row: f"{row['calendario_sap_code_albaranado']} - {row['formatted_frequency_description']}" 
+            if pd.notna(row['calendario_sap_code_albaranado']) and row['calendario_sap_code_albaranado'] != '0' 
+            else row['formatted_frequency_description'],
+            axis=1
+        )
     
     return df
 
@@ -232,7 +262,7 @@ def get_incomplete_week_anomalies(conn, year, month, country_filter=None):
         country_condition = "AND c.pais = ?"
         params.append(country_filter)
 
-    # Obtener clientes con actividad Albaranado y sus frecuencias
+    # Obtener clientes con actividad Albaranado y sus frecuencias, incluyendo calendario SAP y descripción
     query = f"""
     SELECT DISTINCT
         c.id as client_id,
@@ -244,7 +274,12 @@ def get_incomplete_week_anomalies(conn, year, month, country_filter=None):
         c.tipo_cliente,
         c.region,
         c.pais,
+        c.calendario_sap,
         ft.name as frequency_name,
+        ft.description as frequency_description,
+        ft.calendario_sap_code,
+        ft.frequency_type,
+        ft.frequency_config,
         cd.date as fecha_albaranado,
         cd.date_position
     FROM clients c
@@ -260,8 +295,26 @@ def get_incomplete_week_anomalies(conn, year, month, country_filter=None):
     
     # Filtrar solo los clientes cuya frecuencia coincida con días afectados
     if not df.empty:
+        # Importar la función para formatear la descripción de frecuencia
+        from calendar_utils import format_frequency_description
+        
         df['weekday_from_frequency'] = df['frequency_name'].apply(get_weekday_from_frequency_name)
         df = df[df['weekday_from_frequency'].isin(affected_weekdays)]
+        
+        # Formatear la descripción de frecuencia usando la función utilitaria
+        df['formatted_frequency_description'] = df.apply(
+            lambda row: format_frequency_description(row['frequency_type'], row['frequency_config']),
+            axis=1
+        )
+        
+        # Crear la descripción completa del calendario SAP con frecuencia
+        df['calendario_sap_full'] = df.apply(
+            lambda row: f"{row['calendario_sap_code']} - {row['formatted_frequency_description']}" 
+            if pd.notna(row['calendario_sap_code']) and row['calendario_sap_code'] != '0' 
+            else row['formatted_frequency_description'],
+            axis=1
+        )
+        
         df['reason'] = df['weekday_from_frequency'].apply(
             lambda x: f"Semana incompleta afecta {x}"
         )
@@ -292,6 +345,7 @@ def get_holiday_anomalies(conn, year, month, country_filter=None):
         country_condition = "AND c.pais = ?"
         params.append(country_filter)
     
+    # Incluir información de calendario SAP y descripción de frecuencias
     query = f"""
     SELECT DISTINCT
         c.id as client_id,
@@ -303,9 +357,17 @@ def get_holiday_anomalies(conn, year, month, country_filter=None):
         c.tipo_cliente,
         c.region,
         c.pais,
+        c.calendario_sap,
+        ft.name as frequency_name,
+        ft.description as frequency_description,
+        ft.calendario_sap_code,
+        ft.frequency_type,
+        ft.frequency_config,
         cd.date as fecha_albaranado,
         cd.date_position
     FROM clients c
+    JOIN client_activities ca ON c.id = ca.client_id AND ca.activity_name = 'Albaranado'
+    JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
     JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_name = 'Albaranado'
     WHERE date(cd.date) IN ({placeholders})
     {country_condition}
@@ -314,8 +376,25 @@ def get_holiday_anomalies(conn, year, month, country_filter=None):
     
     df = pd.read_sql_query(query, conn, params=params)
     
-    # Agregar descripción del festivo
+    # Agregar descripción del festivo y formatear información de calendario SAP
     if not df.empty:
+        # Importar la función para formatear la descripción de frecuencia
+        from calendar_utils import format_frequency_description
+        
+        # Formatear la descripción de frecuencia usando la función utilitaria
+        df['formatted_frequency_description'] = df.apply(
+            lambda row: format_frequency_description(row['frequency_type'], row['frequency_config']),
+            axis=1
+        )
+        
+        # Crear la descripción completa del calendario SAP con frecuencia
+        df['calendario_sap_full'] = df.apply(
+            lambda row: f"{row['calendario_sap_code']} - {row['formatted_frequency_description']}" 
+            if pd.notna(row['calendario_sap_code']) and row['calendario_sap_code'] != '0' 
+            else row['formatted_frequency_description'],
+            axis=1
+        )
+        
         df['holiday_description'] = df['fecha_albaranado'].apply(
             lambda x: holiday_descriptions.get(x, 'Día festivo')
         )

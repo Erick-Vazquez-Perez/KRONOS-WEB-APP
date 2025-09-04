@@ -65,7 +65,7 @@ def get_delivery_anomalies(country_filter=None):
     else:
         last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
-    # Construir query con filtro de país opcional
+    # Construir query con filtro de país opcional e incluir información de calendario SAP
     if country_filter:
         query = """
         SELECT 
@@ -77,6 +77,12 @@ def get_delivery_anomalies(country_filter=None):
             c.tipo_cliente,
             c.region,
             c.pais,
+            c.calendario_sap,
+            ft_alb.name as frequency_name_albaranado,
+            ft_alb.description as frequency_description_albaranado,
+            ft_alb.calendario_sap_code as calendario_sap_code_albaranado,
+            ft_alb.frequency_type as frequency_type_albaranado,
+            ft_alb.frequency_config as frequency_config_albaranado,
             alb.date as fecha_albaranado,
             ent.date as fecha_entrega,
             alb.date_position as pos_albaranado,
@@ -85,6 +91,8 @@ def get_delivery_anomalies(country_filter=None):
         JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
         JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
                                     AND alb.date_position = ent.date_position
+        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+        LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
         WHERE date(alb.date) > date(ent.date)
         AND c.pais = ?
         AND (
@@ -109,6 +117,12 @@ def get_delivery_anomalies(country_filter=None):
             c.tipo_cliente,
             c.region,
             c.pais,
+            c.calendario_sap,
+            ft_alb.name as frequency_name_albaranado,
+            ft_alb.description as frequency_description_albaranado,
+            ft_alb.calendario_sap_code as calendario_sap_code_albaranado,
+            ft_alb.frequency_type as frequency_type_albaranado,
+            ft_alb.frequency_config as frequency_config_albaranado,
             alb.date as fecha_albaranado,
             ent.date as fecha_entrega,
             alb.date_position as pos_albaranado,
@@ -117,6 +131,8 @@ def get_delivery_anomalies(country_filter=None):
         JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
         JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
                                     AND alb.date_position = ent.date_position
+        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+        LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
         WHERE date(alb.date) > date(ent.date)
         AND (
             (date(alb.date) >= ? AND date(alb.date) <= ?) OR
@@ -128,6 +144,27 @@ def get_delivery_anomalies(country_filter=None):
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
         ))
+    
+    # Agregar información formateada de calendario SAP para anomalías de entrega
+    if not df.empty:
+        # Importar la función para formatear la descripción de frecuencia
+        from calendar_utils import format_frequency_description
+        
+        # Formatear la descripción de frecuencia usando la función utilitaria
+        df['formatted_frequency_description'] = df.apply(
+            lambda row: format_frequency_description(row['frequency_type_albaranado'], row['frequency_config_albaranado'])
+            if pd.notna(row['frequency_type_albaranado']) and pd.notna(row['frequency_config_albaranado'])
+            else row.get('frequency_description_albaranado', ''),
+            axis=1
+        )
+        
+        # Crear la descripción completa del calendario SAP con frecuencia
+        df['calendario_sap_full'] = df.apply(
+            lambda row: f"{row['calendario_sap_code_albaranado']} - {row['formatted_frequency_description']}" 
+            if pd.notna(row['calendario_sap_code_albaranado']) and row['calendario_sap_code_albaranado'] != '0' 
+            else row['formatted_frequency_description'],
+            axis=1
+        )
     
     conn.close()
     
@@ -420,13 +457,14 @@ def show_dashboard():
                         'codigo_ag': 'Cód. AG',
                         'codigo_we': 'Cód. WE',
                         'csr': 'CSR',
+                        'calendario_sap_full': 'Calendario SAP',
                         'frequency_name': 'Frecuencia',
                         'fecha_albaranado': 'Fecha Albaranado',
                         'weekday_from_frequency': 'Día Afectado',
                         'reason': 'Motivo'
                     })
                     
-                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Frecuencia', 'Fecha Albaranado', 'Día Afectado', 'Motivo']
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Calendario SAP', 'Fecha Albaranado', 'Día Afectado', 'Motivo']
                     display_df = display_df[key_columns]
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -454,12 +492,13 @@ def show_dashboard():
                         'codigo_ag': 'Cód. AG',
                         'codigo_we': 'Cód. WE',
                         'csr': 'CSR',
+                        'calendario_sap_full': 'Calendario SAP',
                         'fecha_albaranado': 'Fecha Albaranado',
                         'holiday_description': 'Festivo',
                         'reason': 'Motivo'
                     })
                     
-                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Fecha Albaranado', 'Festivo', 'Motivo']
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Calendario SAP', 'Fecha Albaranado', 'Festivo', 'Motivo']
                     display_df = display_df[key_columns]
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
