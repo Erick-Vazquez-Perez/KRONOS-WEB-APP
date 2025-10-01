@@ -1,5 +1,5 @@
 """
-Estilos CSS personalizados para la aplicación KRONOS
+Estilos CSS personalizados para la aplicación GREEN LOGISTICS - Werfen
 Colores corporativos Werfen: Azul #06038D, Naranja #E87721
 """
 

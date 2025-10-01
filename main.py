@@ -68,12 +68,12 @@ def main():
     
     # Navegación usando selectbox - Basado en permisos del usuario
     if is_read_only_mode():
-        # Usuario de solo lectura - Solo Dashboard y Clientes
-        page_options = ["Dashboard", "Clientes"]
+        # Usuario de solo lectura - Solo Dashboard, Clientes y Generar Calendarios
+        page_options = ["Dashboard", "Clientes", "Generar Calendarios"]
         help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
-        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Generar Calendarios"]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación
@@ -106,6 +106,14 @@ def main():
         show_add_client()
     elif page == "Administrar Frecuencias" and not is_read_only_mode():
         show_manage_frequencies()
+    elif page == "Generar Calendarios":
+        # Import dinámico para evitar problemas de dependencias
+        try:
+            from ui_calendar_generator import show_calendar_generator
+            show_calendar_generator()
+        except ImportError as e:
+            st.error(f"Error cargando módulo de generación de calendarios: {e}")
+            st.info("Asegúrate de que las dependencias python-docx y openpyxl estén instaladas.")
     elif page == "Rendimiento Sistema" and not is_read_only_mode():
         show_performance_dashboard()
     elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]:
