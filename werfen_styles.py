@@ -747,7 +747,7 @@ def get_werfen_header():
     """Retorna el header personalizado de Werfen"""
     return """
     <div class="werfen-logo fade-in-up">
-        <h1>Kronos Web App</h1>
+        <h1>Green Logistics</h1>
     </div>
     """
 
@@ -786,7 +786,7 @@ def get_werfen_footer():
     """Retorna el footer personalizado"""
     return """
     <div class="werfen-footer">
-        <p>Kronos Web App - Shipment Consolidation | Werfen México Customer Service</p>
+        <p>Green Logistics Web App - Shipment Consolidation | Werfen México Customer Service</p>
     </div>
     """
 

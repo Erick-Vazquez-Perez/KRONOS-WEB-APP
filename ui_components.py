@@ -26,7 +26,7 @@ import sqlite3
 
 def show_clients_gallery():
     """Muestra la galería de clientes"""
-    st.header("Clientes Kronos")
+    st.header("Clientes Green Logistics")
     
     # Mostrar filtro de país activo si aplica
     if has_country_filter():
