@@ -1,14 +1,15 @@
-# KRONOS 2.0 - Sistema de Gestión de Calendarios
+# Green Logistics - Sistema de Gestión de Calendarios
 
-Sistema web desarrollado para Werfen que permite gestionar calendarios de clientes con autenticación basada en roles y base de datos en la nube.
+Sistema web desarrollado para Green Logistics México y Colombia que permite gestionar calendarios de clientes con autenticación basada en roles y base de datos en la nube.
 
 ## 🚀 Características
 
 ### ✅ **Sistema de Autenticación**
 - **Login persistente** - No se pierde la sesión al hacer refresh
-- **Dos tipos de usuario:**
-  - `kronosuser` - Solo lectura (visualización)
-  - `kronosadmin` - Permisos completos (edición)
+- **Tres tipos de usuario:**
+  - `gladmin` - Administrador completo (ve todos los países)
+  - `glmxuser` - Solo lectura de clientes de México
+  - `glcouser` - Solo lectura de clientes de Colombia
 - **Interfaz mejorada** con logo corporativo
 
 ### ✅ **Base de Datos en la Nube**
@@ -23,10 +24,11 @@ Sistema web desarrollado para Werfen que permite gestionar calendarios de client
 
 ## 👥 Usuarios del Sistema
 
-| Usuario | Contraseña | Permisos |
-|---------|------------|----------|
-| `kronosuser` | `KronosUser2024!` | Solo lectura |
-| `kronosadmin` | `KronosAdmin2024!` | Administrador completo |
+| Usuario | Contraseña | Permisos | País |
+|---------|------------|----------|------|
+| `gladmin` | `GLAdmin2024!` | Administrador completo | Todos |
+| `glmxuser` | `GLMXUser2024!` | Solo lectura | México |
+| `glcouser` | `GLCOUser2024!` | Solo lectura | Colombia |
 
 ## 🛠️ Configuración para Desarrollo
 
@@ -37,7 +39,7 @@ Sistema web desarrollado para Werfen que permite gestionar calendarios de client
 
 2. **Variables de entorno** (archivo `.env`):
    ```env
-   KRONOS_ENV=development
+   GL_ENV=development
    LOCAL_DEVELOPMENT=true
    SQLITECLOUD_CONNECTION_STRING=sqlitecloud://cdjydgzlhk.g5.sqlite.cloud:8860/client_calendar.db?apikey=umCTRDGxAR2FUkNbpDOihf47bM4bQR3tRKJ53qFzL7A
    ```
@@ -61,7 +63,7 @@ Sistema web desarrollado para Werfen que permite gestionar calendarios de client
 ## 📁 Estructura del Proyecto
 
 ```
-KRONOS 2.0/
+Green Logistics/
 ├── main.py                 # Aplicación principal
 ├── auth_system.py          # Sistema de autenticación
 ├── config.py              # Configuración de entornos
@@ -85,15 +87,24 @@ KRONOS 2.0/
 
 ## 📊 Funcionalidades por Rol
 
-### 📋 **Usuario (kronosuser)**
-- ✅ Ver dashboard con métricas
-- ✅ Ver galería de clientes
+### 📋 **Usuario México (glmxuser)**
+- ✅ Ver dashboard con métricas de México
+- ✅ Ver clientes de México únicamente
 - ✅ Ver detalles de cada cliente
 - ✅ Exportar datos
 - ❌ No puede agregar/editar/eliminar
 
-### ⚙️ **Administrador (kronosadmin)**
+### 📋 **Usuario Colombia (glcouser)**
+- ✅ Ver dashboard con métricas de Colombia
+- ✅ Ver clientes de Colombia únicamente
+- ✅ Ver detalles de cada cliente
+- ✅ Exportar datos
+- ❌ No puede agregar/editar/eliminar
+
+### ⚙️ **Administrador (gladmin)**
 - ✅ Todas las funciones de usuario
+- ✅ Ver todos los países
+- ✅ Selector de país en dashboard
 - ✅ Agregar nuevos clientes
 - ✅ Editar clientes existentes
 - ✅ Gestionar frecuencias
@@ -107,6 +118,7 @@ KRONOS 2.0/
 - **Información de usuario** al final de la sidebar
 - **Navegación intuitiva** basada en permisos
 - **Mensajes claros** de estado y errores
+- **Filtros por país** automáticos según usuario
 
 ## 🚧 Funciones Próximamente
 
@@ -117,4 +129,4 @@ KRONOS 2.0/
 
 ---
 
-**Desarrollado para Werfen** | **KRONOS 2.0** | **2025**
+**Green Logistics MX & CO** | **Sistema de Gestión** | **2025**

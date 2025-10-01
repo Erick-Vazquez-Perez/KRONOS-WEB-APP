@@ -378,15 +378,15 @@ def init_database():
         db_path = get_database_path()
         config = get_db_config()
         
-        print(f"[KRONOS] Inicializando base de datos: {db_path}")
-        print(f"[KRONOS] Entorno: {config.get_environment()}")
-        print(f"[KRONOS] Descripción: {config.db_config['description']}")
+        print(f"[GREEN LOGISTICS] Inicializando base de datos: {db_path}")
+        print(f"[GREEN LOGISTICS] Entorno: {config.get_environment()}")
+        print(f"[GREEN LOGISTICS] Descripción: {config.db_config['description']}")
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
     except Exception as e:
-        print(f"[KRONOS] ERROR en inicialización de BD: {e}")
+        print(f"[GREEN LOGISTICS] ERROR en inicialización de BD: {e}")
         import streamlit as st
         st.error(f"❌ Error de configuración de base de datos: {str(e)}")
         st.stop()

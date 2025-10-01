@@ -1,5 +1,5 @@
 """
-Sistema de autenticación y autorización para KRONOS 2.0
+Sistema de autenticación y autorización para Green Logistics
 """
 
 import streamlit as st
@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 class UserRole(Enum):
-    ADMIN = "kronosadmin"
-    USER = "kronosuser"
-    GLCO_USER = "glcouser"
+    ADMIN = "gladmin"
+    MX_USER = "glmxuser"
+    CO_USER = "glcouser"
 
 class AuthSystem:
     """Sistema de autenticación y autorización"""
@@ -19,10 +19,10 @@ class AuthSystem:
     def __init__(self):
         # Usuarios predefinidos (en producción podrían venir de BD)
         self.users = {
-            "kronosadmin": {
-                "password_hash": self._hash_password("KronosAdmin2024!"),
+            "gladmin": {
+                "password_hash": self._hash_password("GLAdmin2024!"),
                 "role": UserRole.ADMIN,
-                "name": "KronosAdministrator",
+                "name": "Green Logistics Administrator",
                 "permissions": {
                     "read": True,
                     "write": True,
@@ -36,10 +36,10 @@ class AuthSystem:
                 },
                 "country_filter": None  # Sin filtro, ve todos los países
             },
-            "kronosuser": {
-                "password_hash": self._hash_password("KronosUser2024!"),
-                "role": UserRole.USER,
-                "name": "KronosUser",
+            "glmxuser": {
+                "password_hash": self._hash_password("GLMXUser2024!"),
+                "role": UserRole.MX_USER,
+                "name": "Green Logistics MX User",
                 "permissions": {
                     "read": True,
                     "write": False,
@@ -51,12 +51,12 @@ class AuthSystem:
                     "export_data": True,
                     "view_debug": False
                 },
-                "country_filter": None  # Sin filtro, ve todos los países
+                "country_filter": "México"  # Solo ve clientes de México
             },
             "glcouser": {
                 "password_hash": self._hash_password("GLCOUser2024!"),
-                "role": UserRole.GLCO_USER,
-                "name": "GLCO User",
+                "role": UserRole.CO_USER,
+                "name": "Green Logistics CO User",
                 "permissions": {
                     "read": True,
                     "write": False,
@@ -217,10 +217,10 @@ class AuthSystem:
             # Título
             st.markdown("""
             <h1 style="text-align: center; color: #2c3e50; font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0;">
-                KRONOS 2.0
+                Green Logistics
             </h1>
             <p style="text-align: center; color: #6c757d; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                Gestión de Calendarios
+                Sistema de Gestión
             </p>
             """, unsafe_allow_html=True)
             
@@ -264,15 +264,16 @@ class AuthSystem:
             ">
                 <h5 style="font-size: 0.85rem; color: #495057; margin-bottom: 0.5rem;">Acceso de Prueba</h5>
                 <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
-                    kronosuser / KronosUser2024!
+                    gladmin / GLAdmin2024!
                 </div>
                 <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
-                    kronosadmin / KronosAdmin2024!
+                    glmxuser / GLMXUser2024!
                 </div>
                 <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
                     glcouser / GLCOUser2024!
                 </div>
                 <div style="font-size: 0.7rem; color: #6c757d; margin-top: 0.5rem;">
+                    GLMXUser: Solo visualización de clientes de México<br>
                     GLCOUser: Solo visualización de clientes de Colombia
                 </div>
             </div>

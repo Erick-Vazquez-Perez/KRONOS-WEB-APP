@@ -324,7 +324,7 @@ def create_oc_line_chart(monthly_data, selected_month_name):
 
 def show_dashboard():
     """Función principal del dashboard"""
-    st.header("Dashboard Kronos")
+    st.header("Dashboard Green Logistics")
     st.markdown("*Vista general de las actividades y fechas programadas*")
     
     # ========== SELECTOR DE PAÍS PARA ADMINISTRADORES ==========
@@ -363,9 +363,9 @@ def show_dashboard():
         
         st.divider()
     
-    # Para otros usuarios (kronosuser), no hay selector pero tampoco filtro fijo
+    # Para otros usuarios (glmxuser), no hay selector pero tampoco filtro fijo
     else:
-        # kronosuser ve todos los países pero sin selector
+        # glmxuser ve todos los países pero sin selector
         pass
     
     # ========== TABLAS DE ALERTAS (PRIMERA SECCIÓN) ==========

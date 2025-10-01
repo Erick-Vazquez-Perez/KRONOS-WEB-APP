@@ -15,7 +15,7 @@ def load_env_file():
                         key, value = line.split('=', 1)
                         os.environ[key.strip()] = value.strip()
         except Exception as e:
-            print(f"[KRONOS] Advertencia: Error cargando .env: {e}")
+            print(f"[GREEN LOGISTICS] Advertencia: Error cargando .env: {e}")
 
 # Cargar .env al importar el módulo
 load_env_file()
@@ -38,7 +38,7 @@ class DatabaseConfig:
                 ctx = st._get_script_run_ctx()
                 if ctx and hasattr(ctx, 'session_info'):
                     # Si estamos en un contexto de Streamlit con sesión, probablemente es Cloud
-                    print("[KRONOS] Streamlit Cloud detectado por contexto de sesión")
+                    print("[GREEN LOGISTICS] Streamlit Cloud detectado por contexto de sesión")
                     return 'production'
         except:
             pass
@@ -64,20 +64,20 @@ class DatabaseConfig:
         for indicator in production_indicators:
             value = os.getenv(indicator)
             if value:
-                print(f"[KRONOS] Producción detectada por: {indicator}={value}")
+                print(f"[GREEN LOGISTICS] Producción detectada por: {indicator}={value}")
                 return 'production'
         
         # 2. Verificar variable de entorno específica (solo si no hay indicadores de producción)
-        if os.getenv('KRONOS_ENV'):
-            env = os.getenv('KRONOS_ENV').lower()
+        if os.getenv('GL_ENV'):
+            env = os.getenv('GL_ENV').lower()
             if env in ['development', 'production', 'testing']:
-                # Si KRONOS_ENV dice development y tenemos LOCAL_DEVELOPMENT=true, respetarlo
+                # Si GL_ENV dice development y tenemos LOCAL_DEVELOPMENT=true, respetarlo
                 if env == 'development' and (self._is_localhost() or os.getenv('LOCAL_DEVELOPMENT') == 'true'):
-                    print("[KRONOS] KRONOS_ENV=development respetado (localhost o LOCAL_DEVELOPMENT=true)")
+                    print("[GREEN LOGISTICS] GL_ENV=development respetado (localhost o LOCAL_DEVELOPMENT=true)")
                     return env
-                # Si KRONOS_ENV dice development pero estamos en servidor remoto, forzar producción
+                # Si GL_ENV dice development pero estamos en servidor remoto, forzar producción
                 elif env == 'development' and not self._is_localhost() and not os.getenv('LOCAL_DEVELOPMENT'):
-                    print("[KRONOS] KRONOS_ENV=development ignorado en servidor remoto, forzando producción")
+                    print("[GREEN LOGISTICS] GL_ENV=development ignorado en servidor remoto, forzando producción")
                     return 'production'
                 return env
         
@@ -95,7 +95,7 @@ class DatabaseConfig:
             
             for pattern in cloud_patterns:
                 if pattern in hostname:
-                    print(f"[KRONOS] Producción detectada por hostname: {hostname}")
+                    print(f"[GREEN LOGISTICS] Producción detectada por hostname: {hostname}")
                     return 'production'
         except:
             pass
@@ -106,14 +106,14 @@ class DatabaseConfig:
             import socket
             ip = socket.gethostbyname(socket.gethostname())
             if not ip.startswith('127.') and not ip.startswith('192.168.') and not ip.startswith('10.'):
-                print(f"[KRONOS] Producción detectada por IP no local: {ip}")
+                print(f"[GREEN LOGISTICS] Producción detectada por IP no local: {ip}")
                 return 'production'
         except:
             pass
         
         # 5. Si no estamos en entorno local, SIEMPRE es producción (excepto si es localhost o LOCAL_DEVELOPMENT)
         if not self._is_local_environment() and not self._is_localhost() and not os.getenv('LOCAL_DEVELOPMENT'):
-            print("[KRONOS] No es entorno local ni localhost, forzando producción")
+            print("[GREEN LOGISTICS] No es entorno local ni localhost, forzando producción")
             return 'production'
         
         # 6. Verificar si existe un archivo .env (solo como última opción)
@@ -129,10 +129,10 @@ class DatabaseConfig:
         
         # 7. FALLBACK FINAL: Si llegamos aquí y no es local (y no hay LOCAL_DEVELOPMENT), ES PRODUCCIÓN
         if os.getenv('LOCAL_DEVELOPMENT') == 'true':
-            print("[KRONOS] LOCAL_DEVELOPMENT=true detectado, forzando desarrollo")
+            print("[GREEN LOGISTICS] LOCAL_DEVELOPMENT=true detectado, forzando desarrollo")
             return 'development'
         
-        print("[KRONOS] Fallback: Asumiendo producción por exclusión")
+        print("[GREEN LOGISTICS] Fallback: Asumiendo producción por exclusión")
         return 'production'
     
     def _is_localhost(self):
@@ -148,7 +148,7 @@ class DatabaseConfig:
                 result = sock.connect_ex(('127.0.0.1', 8501))  # Puerto típico de Streamlit
                 sock.close()
                 if result == 0:
-                    print("[KRONOS] Localhost detectado - Streamlit ejecutándose en 127.0.0.1:8501")
+                    print("[GREEN LOGISTICS] Localhost detectado - Streamlit ejecutándose en 127.0.0.1:8501")
                     return True
             except:
                 pass
@@ -156,14 +156,14 @@ class DatabaseConfig:
             # Verificar hostname localhost
             hostname = socket.gethostname().lower()
             if 'localhost' in hostname or hostname == 'localhost':
-                print(f"[KRONOS] Localhost detectado por hostname: {hostname}")
+                print(f"[GREEN LOGISTICS] Localhost detectado por hostname: {hostname}")
                 return True
             
             # Verificar IP local
             try:
                 ip = socket.gethostbyname(hostname)
                 if ip.startswith('127.'):
-                    print(f"[KRONOS] Localhost detectado por IP: {ip}")
+                    print(f"[GREEN LOGISTICS] Localhost detectado por IP: {ip}")
                     return True
             except:
                 pass
@@ -171,7 +171,7 @@ class DatabaseConfig:
             return False
             
         except Exception as e:
-            print(f"[KRONOS] Error detectando localhost: {e}")
+            print(f"[GREEN LOGISTICS] Error detectando localhost: {e}")
             return False
     
     def _is_local_environment(self):
@@ -203,7 +203,7 @@ class DatabaseConfig:
             
             # Si LOCAL_DEVELOPMENT está activado, no rechazar por ruta
             if os.getenv('LOCAL_DEVELOPMENT') == 'true':
-                print(f"[KRONOS] LOCAL_DEVELOPMENT=true - ignorando verificación de rutas no locales")
+                print(f"[GREEN LOGISTICS] LOCAL_DEVELOPMENT=true - ignorando verificación de rutas no locales")
             else:
                 non_local_paths = [
                     'onedrive',  # Tu caso específico
@@ -217,15 +217,15 @@ class DatabaseConfig:
                 
                 for path in non_local_paths:
                     if path in current_path:
-                        print(f"[KRONOS] Entorno no local detectado por ruta: {current_path}")
+                        print(f"[GREEN LOGISTICS] Entorno no local detectado por ruta: {current_path}")
                         return False
             
             is_local = any(local_indicators)
-            print(f"[KRONOS] Detección local: {is_local} (hostname: {hostname})")
+            print(f"[GREEN LOGISTICS] Detección local: {is_local} (hostname: {hostname})")
             return is_local
             
         except Exception as e:
-            print(f"[KRONOS] Error detectando entorno local: {e}")
+            print(f"[GREEN LOGISTICS] Error detectando entorno local: {e}")
             return False
     
     def _get_db_config(self):
@@ -271,10 +271,10 @@ class DatabaseConfig:
             if self.is_production():
                 project_dir = Path(__file__).parent.absolute()
                 db_path = project_dir / db_name
-                print(f"[KRONOS] Ruta de BD local en producción: {db_path}")
+                print(f"[GREEN LOGISTICS] Ruta de BD local en producción: {db_path}")
                 return str(db_path)
             else:
-                print(f"[KRONOS] Ruta de BD local en desarrollo: {db_name}")
+                print(f"[GREEN LOGISTICS] Ruta de BD local en desarrollo: {db_name}")
                 return db_name
     
     def get_db_connection(self):
@@ -289,11 +289,11 @@ class DatabaseConfig:
                 try:
                     connection_string = st.secrets.get("SQLITECLOUD_CONNECTION_STRING")
                     if connection_string:
-                        print(f"[KRONOS] Cadena de conexión obtenida desde st.secrets")
+                        print(f"[GREEN LOGISTICS] Cadena de conexión obtenida desde st.secrets")
                     else:
                         raise ValueError("SQLITECLOUD_CONNECTION_STRING no encontrada en secrets")
                 except Exception as e:
-                    print(f"[KRONOS] Error leyendo desde st.secrets: {e}")
+                    print(f"[GREEN LOGISTICS] Error leyendo desde st.secrets: {e}")
                     raise ValueError(
                         "❌ Error de configuración: No se pudo obtener la cadena de conexión SQLiteCloud. "
                         "Verifica que SQLITECLOUD_CONNECTION_STRING esté configurada en las variables de entorno "
@@ -304,7 +304,7 @@ class DatabaseConfig:
             try:
                 return sqlitecloud.connect(connection_string)
             except Exception as e:
-                print(f"[KRONOS] Error conectando a SQLiteCloud: {e}")
+                print(f"[GREEN LOGISTICS] Error conectando a SQLiteCloud: {e}")
                 raise ValueError(f"❌ Error de conexión SQLiteCloud: {str(e)}")
         else:
             # Conexión SQLite local para testing
@@ -349,7 +349,7 @@ class DatabaseConfig:
             if hasattr(st, '_get_script_run_ctx'):
                 ctx = st._get_script_run_ctx()
                 if ctx:
-                    print("[KRONOS] Contexto Streamlit detectado - Panel bloqueado")
+                    print("[GREEN LOGISTICS] Contexto Streamlit detectado - Panel bloqueado")
                     return  # SALIR INMEDIATAMENTE - NO MOSTRAR PANEL
         except:
             pass
@@ -364,12 +364,12 @@ class DatabaseConfig:
         
         for var in streamlit_cloud_vars:
             if os.getenv(var):
-                print(f"[KRONOS] Variable Streamlit Cloud detectada: {var} - Panel bloqueado")
+                print(f"[GREEN LOGISTICS] Variable Streamlit Cloud detectada: {var} - Panel bloqueado")
                 return  # SALIR INMEDIATAMENTE
         
         # CONDICIÓN ESTRICTA: Solo mostrar en desarrollo Y (entorno local O localhost)
         if self.is_development() and (self._is_local_environment() or self._is_localhost()):
-            print("[KRONOS] Mostrando panel de desarrollo (entorno local o localhost confirmado)")
+            print("[GREEN LOGISTICS] Mostrando panel de desarrollo (entorno local o localhost confirmado)")
             info = self.get_config_info()
             
             with st.expander("🔧 Información del Entorno (Solo Desarrollo Local)", expanded=False):
@@ -411,7 +411,7 @@ class DatabaseConfig:
                         st.rerun()
         else:
             # Log para debugging (no visible al usuario)
-            print(f"[KRONOS] Panel bloqueado - Development: {self.is_development()}, Local: {self._is_local_environment()}, Localhost: {self._is_localhost()}")
+            print(f"[GREEN LOGISTICS] Panel bloqueado - Development: {self.is_development()}, Local: {self._is_local_environment()}, Localhost: {self._is_localhost()}")
 
 # Instancia global de configuración
 db_config = DatabaseConfig()

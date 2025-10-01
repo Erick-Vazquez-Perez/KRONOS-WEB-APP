@@ -4,7 +4,7 @@
 *.sqlite
 *.sqlite3
 
-# Base de datos específicas de Kronos
+# Base de datos específicas de Green Logistics
 # client_calendar.db - INCLUIDO para producción en Streamlit Cloud
 client_calendar_test.db
 
@@ -63,3 +63,6 @@ temp_*.py
 # Archivos SQL
 *.sql
 *.sql.gz
+
+# Archivos docx
+*.docx
