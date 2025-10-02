@@ -1126,6 +1126,9 @@ def delete_client_activity(client_id, activity_name):
 
 def get_calculated_dates(client_id, use_cache=True):
     """Obtiene las fechas calculadas para un cliente en orden específico con cache"""
+    # Convertir numpy.int64 a int de Python para evitar problemas de serialización
+    client_id = int(client_id)
+    
     if use_cache:
         cache_key = f"dates_{client_id}"
         cached_dates = _db_cache.get(cache_key, 60)
@@ -1506,5 +1509,70 @@ def optimize_database():
     except Exception as e:
         print(f"Error en optimización de BD: {e}")
         return False
+    finally:
+        return_pooled_connection(conn)
+
+def save_calculated_dates_by_year(client_id, activity_name, dates_list, year):
+    """Guarda fechas para una actividad específica de un año específico, preservando otros años"""
+    if not dates_list:
+        print(f"No hay fechas para guardar para actividad {activity_name} del año {year}")
+        return
+        
+    # Convertir client_id para evitar problemas de serialización
+    client_id = int(client_id)
+    
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Usar transacción para operaciones atómicas
+        cursor.execute("BEGIN TRANSACTION")
+        
+        # Eliminar solo fechas del año específico para esta actividad
+        cursor.execute('''
+            DELETE FROM calculated_dates 
+            WHERE client_id = ? AND activity_name = ? 
+            AND date LIKE ?
+        ''', (client_id, activity_name, f"{year}-%"))
+        
+        # Obtener la máxima posición existente para esta actividad
+        cursor.execute('''
+            SELECT COALESCE(MAX(date_position), 0) 
+            FROM calculated_dates 
+            WHERE client_id = ? AND activity_name = ?
+        ''', (client_id, activity_name))
+        
+        max_position = cursor.fetchone()[0]
+        
+        # Insertar nuevas fechas con posiciones que no conflicten
+        for i, date_item in enumerate(dates_list):
+            if date_item:
+                position = max_position + i + 1  # Continuar desde la máxima posición existente
+                
+                # Manejo más robusto de diferentes tipos de fecha
+                if hasattr(date_item, 'strftime'):
+                    date_str = date_item.strftime('%Y-%m-%d')
+                else:
+                    date_str = str(date_item)
+                
+                # Verificar que la fecha sea del año correcto
+                if date_str.startswith(f"{year}-"):
+                    cursor.execute('''
+                        INSERT INTO calculated_dates (client_id, activity_name, date_position, date)
+                        VALUES (?, ?, ?, ?)
+                    ''', (client_id, activity_name, position, date_str))
+        
+        conn.commit()
+        # Contar fechas válidas guardadas de manera más simple
+        dates_saved_count = len([d for d in dates_list if d])
+        print(f"Guardadas {dates_saved_count} fechas para {activity_name} del año {year}")
+        
+        # Invalidar cache relacionado
+        _db_cache.invalidate_pattern(f"dates_{client_id}")
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error guardando fechas calculadas por año: {e}")
+        raise e
     finally:
         return_pooled_connection(conn)

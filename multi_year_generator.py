@@ -837,6 +837,24 @@ def save_all_calculated_dates(client_id, activity_name, dates_list):
     if not dates_list:
         print(f"No hay fechas para guardar para actividad {activity_name}")
         return 0
+
+def save_all_calculated_dates_by_year(client_id, activity_name, dates_list, year):
+    """Guarda todas las fechas para una actividad específica de un año, preservando otros años"""
+    if not dates_list:
+        print(f"No hay fechas para guardar para actividad {activity_name} del año {year}")
+        return 0
+        
+    try:
+        from database import save_calculated_dates_by_year
+        
+        # Usar la nueva función de base de datos que preserva otros años
+        save_calculated_dates_by_year(client_id, activity_name, dates_list, year)
+        
+        return len(dates_list)
+        
+    except Exception as e:
+        print(f"Error guardando fechas para {activity_name} del año {year}: {e}")
+        return 0
         
     try:
         from database import get_pooled_connection, return_pooled_connection, _db_cache
@@ -925,13 +943,13 @@ def execute_generation(preview_data):
                 for activity in item['activities']:
                     if activity['dates']:
                         # Preparar lista de fechas para esta actividad específica
-                        dates_list = [date_obj.strftime('%Y-%m-%d') for date_obj in activity['dates']]
+                        dates_list = activity['dates']  # Ya son objetos datetime
                         
                         # Debug: mostrar información de la actividad
-                        debug_info.info(f"Guardando {len(dates_list)} fechas para {activity['name']}")
+                        debug_info.info(f"Guardando {len(dates_list)} fechas para {activity['name']} del año {item['year']}")
                         
-                        # Guardar todas las fechas en la base de datos
-                        dates_saved = save_all_calculated_dates(item['client_id'], activity['name'], dates_list)
+                        # Usar la nueva función que preserva fechas de otros años
+                        dates_saved = save_all_calculated_dates_by_year(item['client_id'], activity['name'], dates_list, item['year'])
                         
                         client_dates_saved += dates_saved
                         total_dates_saved += dates_saved

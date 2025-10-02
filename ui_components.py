@@ -16,7 +16,7 @@ from database import (
     get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary
 )
 from date_calculator import recalculate_client_dates
-from calendar_utils import create_client_calendar_table, format_frequency_description
+from calendar_utils import create_client_calendar_table, format_frequency_description, create_client_calendar_table_by_year, get_client_year_summary_by_year, get_available_years
 from client_constants import get_tipos_cliente, get_regiones, get_paises
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
@@ -562,8 +562,8 @@ def show_client_detail():
     # ========== SECCIÓN MEJORADA DE CALENDARIO CON EDICIÓN ==========
     st.subheader("Calendario de Actividades")
     
-    # Controles de vista mejorados
-    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+    # Controles de vista mejorados - Añadiendo selector de año
+    col1, col2, col3, col4, col5 = st.columns([2.5, 1.5, 1.5, 1.5, 1])
     
     with col1:
         # Configurar opciones de vista según el modo
@@ -580,29 +580,60 @@ def show_client_detail():
         )
     
     with col2:
+        # Selector de año - solo años con fechas disponibles
+        available_years = get_available_years(client_id)
+        current_year = datetime.now().year
+        
+        if available_years:
+            # Si hay años disponibles, usar esos
+            year_options = available_years
+            # Default: año actual si está disponible, sino el más cercano
+            if current_year in year_options:
+                default_index = year_options.index(current_year)
+            else:
+                # Encontrar el año más cercano al actual
+                closest_year = min(year_options, key=lambda x: abs(x - current_year))
+                default_index = year_options.index(closest_year)
+        else:
+            # Si no hay fechas, mostrar años estándar
+            year_options = list(range(current_year - 3, current_year + 5))
+            default_index = year_options.index(current_year)
+        
+        selected_year = st.selectbox(
+            "Año:",
+            year_options,
+            index=default_index,
+            help=f"Años con fechas: {', '.join(map(str, available_years)) if available_years else 'Ninguno'}",
+            key=f"year_selector_{client_id}"
+        )
+    
+    with col3:
         if view_type == "Vista por Mes":
             # Selector de mes para vista mensual
             months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
             
             selected_month = st.selectbox(
-                "Selecciona el mes:",
+                "Mes:",
                 months,
                 index=datetime.now().month - 1,  # Mes actual como default
                 key=f"month_selector_{client_id}"
             )
+        else:
+            # Para otras vistas, mostrar información del año
+            st.write(f"**Año {selected_year}**")
     
-    with col3:
+    with col4:
         # Información adicional según la vista
         if view_type == "Vista por Mes":
-            st.write("*Vista de solo lectura*")
+            st.write("*Vista mensual*")
         elif view_type == "Edición por Año":
             if not is_read_only_mode():
                 st.write("*Vista editable*")
         elif view_type == "Año Completo":
             st.write("*Vista completa*")
     
-    with col4:
+    with col5:
         if not is_read_only_mode():
             if st.button("Recalcular", key=f"recalc_{client_id}"):
                 with st.spinner("Recalculando fechas..."):
@@ -640,38 +671,31 @@ def show_client_detail():
     # Mostrar vista según selección
     try:
         if view_type == "Vista por Mes":
-            show_monthly_readonly_calendar(client_id, selected_month)
+            show_monthly_readonly_calendar(client_id, selected_month, selected_year)
         
         elif view_type == "Edición por Año":
-            show_editable_full_year_calendar(client_id)
+            show_editable_full_year_calendar(client_id, selected_year)
         
         elif view_type == "Año Completo":
-            calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+            calendar_df = create_client_calendar_table_by_year(client_id, selected_year)
             if not calendar_df.empty:
                 st.dataframe(calendar_df, use_container_width=True, hide_index=True)
                 
-                # Mostrar resumen del año
+                # Mostrar resumen del año seleccionado
                 try:
-                    from calendar_utils import get_client_year_summary
-                    summary = get_client_year_summary(client_id)
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total de Fechas", summary['total_fechas'])
-                    with col2:
-                        st.metric("Actividades", summary['actividades'])
-                    with col3:
-                        st.metric("Meses con Actividad", summary['meses_con_actividad'])
-                    with col4:
-                        if summary['proxima_fecha']:
-                            next_date = datetime.strptime(summary['proxima_fecha']['fecha'], '%Y-%m-%d')
-                            st.metric("Próxima Fecha", next_date.strftime('%d-%b'))
-                        else:
-                            st.metric("Próxima Fecha", "N/A")
-                except:
-                    pass
+                    year_summary = get_client_year_summary_by_year(client_id, selected_year)
+                    if year_summary:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Fechas del Año", year_summary.get('total_fechas', 0))
+                        with col2:
+                            st.metric("Actividades", year_summary.get('actividades', 0))
+                        with col3:
+                            st.metric("Meses con Actividad", year_summary.get('meses_con_actividad', 0))
+                except Exception as e:
+                    st.write(f"Error obteniendo resumen del año: {e}")
             else:
-                st.info("No hay fechas calculadas para mostrar el año completo.")
+                st.info(f"No hay fechas calculadas para el año {selected_year}.")
                 
     except Exception as e:
         st.error(f"Error al mostrar el calendario: {e}")
@@ -901,7 +925,7 @@ def show_copy_dates_modal(source_client_id, source_client_name):
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
 
-def show_monthly_readonly_calendar(client_id, selected_month):
+def show_monthly_readonly_calendar(client_id, selected_month, year=None):
     """Muestra un calendario mensual en formato de tabla simple y compacta"""
     
     dates_df = get_calculated_dates(client_id)
@@ -910,7 +934,19 @@ def show_monthly_readonly_calendar(client_id, selected_month):
         st.info("No hay fechas calculadas.")
         return
     
-    st.markdown(f"### Calendario de {selected_month}")
+    # Si se especifica un año, filtrar por ese año
+    if year:
+        try:
+            dates_df['date_obj'] = pd.to_datetime(dates_df['date'])
+            dates_df = dates_df[dates_df['date_obj'].dt.year == year]
+            if dates_df.empty:
+                st.info(f"No hay fechas calculadas para {selected_month} {year}.")
+                return
+        except Exception as e:
+            st.error(f"Error filtrando por año: {e}")
+            return
+    
+    st.markdown(f"### Calendario de {selected_month} {year if year else ''}")
     st.write("*Vista de solo lectura - Fechas programadas para este mes*")
     
     # Convertir nombre del mes a número
@@ -1304,14 +1340,19 @@ def show_monthly_editable_calendar(client_id):
         st.markdown("### Sin Cambios Pendientes")
         st.info(f"Edita las fechas en la tabla superior para ver los cambios de {selected_month}.")
 
-def show_editable_full_year_calendar(client_id):
+def show_editable_full_year_calendar(client_id, year=None):
     """Muestra un calendario anual editable por meses"""
     
     # En modo de solo lectura, redirigir a vista de solo lectura
     if is_read_only_mode():
         st.warning("**Vista de Edición No Disponible en Producción**")
         st.info("Mostrando vista de solo lectura del calendario completo")
-        calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+        
+        if year:
+            calendar_df = create_client_calendar_table_by_year(client_id, year)
+        else:
+            calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+            
         if not calendar_df.empty:
             st.dataframe(calendar_df, use_container_width=True, hide_index=True)
         else:
@@ -1324,7 +1365,21 @@ def show_editable_full_year_calendar(client_id):
         st.info("No hay fechas calculadas para mostrar el año completo.")
         return
     
-    st.markdown("### Calendario Anual Editable")
+    # Filtrar por año si se especifica
+    if year:
+        try:
+            dates_df['date_obj_temp'] = pd.to_datetime(dates_df['date'])
+            dates_df = dates_df[dates_df['date_obj_temp'].dt.year == year]
+            dates_df = dates_df.drop('date_obj_temp', axis=1)
+            
+            if dates_df.empty:
+                st.info(f"No hay fechas calculadas para el año {year}.")
+                return
+        except Exception as e:
+            st.error(f"Error filtrando por año: {e}")
+            return
+    
+    st.markdown(f"### Calendario Anual Editable {year if year else ''}")
     
     # Crear tabs por trimestres
     months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1350,9 +1405,9 @@ def show_editable_full_year_calendar(client_id):
             for month_idx, month in enumerate(quarter_months):
                 with month_tabs[month_idx]:
                     month_num = months.index(month) + 1
-                    show_editable_month_view(client_id, month_num, month, dates_df)
+                    show_editable_month_view(client_id, month_num, month, dates_df, year)
 
-def show_editable_month_view(client_id, month_num, month_name, dates_df):
+def show_editable_month_view(client_id, month_num, month_name, dates_df, year=None):
     """Muestra la vista editable de un mes específico optimizada en bloques de 4"""
     
     # Filtrar fechas del mes
@@ -1361,17 +1416,19 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
         try:
             date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
             if date_obj.month == month_num:
-                month_dates.append({
-                    'activity': row['activity_name'],
-                    'date': date_obj,
-                    'position': row['date_position'],
-                    'original_date_str': row['date']
-                })
+                # Si year está especificado, verificar que coincida
+                if year is None or date_obj.year == year:
+                    month_dates.append({
+                        'activity': row['activity_name'],
+                        'date': date_obj,
+                        'position': row['date_position'],
+                        'original_date_str': row['date']
+                    })
         except:
             continue
     
     if not month_dates:
-        st.info(f"No hay actividades programadas para {month_name}")
+        st.info(f"No hay actividades programadas para {month_name} {year if year else ''}")
         return
     
     # Agrupar por actividad
