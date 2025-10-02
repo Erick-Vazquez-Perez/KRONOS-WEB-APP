@@ -69,11 +69,11 @@ def main():
     # Navegación usando selectbox - Basado en permisos del usuario
     if is_read_only_mode():
         # Usuario de solo lectura - Solo Dashboard, Clientes y Generar Calendarios
-        page_options = ["Dashboard", "Clientes", "Generar Calendarios"]
+        page_options = ["Dashboard", "Clientes", "Generar Calendarios", "Generar Fechas Múltiples"]
         help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
-        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Generar Calendarios"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Generar Calendarios", "Generar Fechas Múltiples"]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación
@@ -114,6 +114,14 @@ def main():
         except ImportError as e:
             st.error(f"Error cargando módulo de generación de calendarios: {e}")
             st.info("Asegúrate de que las dependencias python-docx y openpyxl estén instaladas.")
+    elif page == "Generar Fechas Múltiples":
+        # Import dinámico para el nuevo generador de fechas múltiples
+        try:
+            from multi_year_generator import show_multi_year_generator
+            show_multi_year_generator()
+        except ImportError as e:
+            st.error(f"Error cargando módulo de generación de fechas múltiples: {e}")
+            st.info("Verifica que todos los módulos estén disponibles.")
     elif page == "Rendimiento Sistema" and not is_read_only_mode():
         show_performance_dashboard()
     elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]:
