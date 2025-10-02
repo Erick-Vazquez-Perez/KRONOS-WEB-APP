@@ -76,7 +76,7 @@ def show_calendar_generator():
     """
     Interfaz principal para la generación de calendarios
     """
-    st.header("Generador de Calendarios")
+    st.header("Generador de Cartas Calendario")
     st.markdown("*Genera cartas calendario personalizadas para clientes en formato Word*")
     
     # Verificar si existe la plantilla

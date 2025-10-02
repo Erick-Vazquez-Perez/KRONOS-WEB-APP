@@ -69,11 +69,11 @@ def main():
     # Navegación usando selectbox - Basado en permisos del usuario
     if is_read_only_mode():
         # Usuario de solo lectura - Solo Dashboard, Clientes y Generar Calendarios
-        page_options = ["Dashboard", "Clientes", "Generar Calendarios", "Generar Fechas Múltiples"]
+        page_options = ["Dashboard", "Clientes"]
         help_text = f"Usuario {current_user['username']} - Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
-        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Generar Calendarios", "Generar Fechas Múltiples"]
+        page_options = ["Dashboard", "Clientes", "Agregar Cliente", "Administrar Frecuencias", "Generar Cartas", "Generar Calendarios Anuales"]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
     
     # Selectbox para navegación
@@ -106,7 +106,7 @@ def main():
         show_add_client()
     elif page == "Administrar Frecuencias" and not is_read_only_mode():
         show_manage_frequencies()
-    elif page == "Generar Calendarios":
+    elif page == "Generar Cartas":
         # Import dinámico para evitar problemas de dependencias
         try:
             from ui_calendar_generator import show_calendar_generator
@@ -114,7 +114,7 @@ def main():
         except ImportError as e:
             st.error(f"Error cargando módulo de generación de calendarios: {e}")
             st.info("Asegúrate de que las dependencias python-docx y openpyxl estén instaladas.")
-    elif page == "Generar Fechas Múltiples":
+    elif page == "Generar Calendarios Anuales":
         # Import dinámico para el nuevo generador de fechas múltiples
         try:
             from multi_year_generator import show_multi_year_generator
