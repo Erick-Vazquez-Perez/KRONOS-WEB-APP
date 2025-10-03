@@ -46,9 +46,6 @@ def show_clients_gallery():
     
     clients = get_clients(use_cache=True)
     
-    # Debug temporal
-    st.write(f"DEBUG: get_clients() devolvió {len(clients)} clientes")
-    
     if clients.empty:
         st.info("No hay clientes registrados. Agrega un cliente para comenzar.")
         
