@@ -526,18 +526,28 @@ def get_clients(use_cache=True):
     from auth_system import get_user_country_filter
     
     try:
+        # Debug: Log de inicio
+        print(f"[DEBUG] get_clients() iniciando, use_cache={use_cache}")
+        
         # Obtener todos los clientes
         df = execute_query_df("SELECT * FROM clients ORDER BY name", use_cache=use_cache, cache_ttl=120)
+        print(f"[DEBUG] execute_query_df retornó {len(df)} clientes")
         
         # Aplicar filtro de país si el usuario lo tiene
         country_filter = get_user_country_filter()
+        print(f"[DEBUG] country_filter = {country_filter}")
+        
         if country_filter:
             # Filtrar solo clientes del país específico
+            original_count = len(df)
             df = df[df['pais'] == country_filter] if not df.empty and 'pais' in df.columns else df
+            print(f"[DEBUG] Filtro aplicado: {original_count} -> {len(df)} clientes")
         
+        print(f"[DEBUG] get_clients() retornando {len(df)} clientes")
         return df
     except Exception as e:
-        print(f"Error obteniendo clientes: {e}")
+        print(f"[DEBUG] ERROR en get_clients(): {e}")
+        print(f"[DEBUG] Tipo de error: {type(e).__name__}")
         return pd.DataFrame()
 
 def get_clients_summary():

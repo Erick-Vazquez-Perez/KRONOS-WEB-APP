@@ -46,8 +46,25 @@ def show_clients_gallery():
     
     clients = get_clients(use_cache=True)
     
+    # Debug temporal
+    st.write(f"DEBUG: get_clients() devolvió {len(clients)} clientes")
+    
     if clients.empty:
         st.info("No hay clientes registrados. Agrega un cliente para comenzar.")
+        
+        # Debug adicional
+        try:
+            st.write("DEBUG: Intentando consulta directa...")
+            from database import get_pooled_connection, return_pooled_connection
+            conn = get_pooled_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM clients")
+            count = cursor.fetchone()[0]
+            st.write(f"DEBUG: Consulta directa encontró {count} clientes")
+            return_pooled_connection(conn)
+        except Exception as e:
+            st.write(f"DEBUG: Error en consulta directa: {e}")
+        
         return
     
     # Fila superior: búsqueda de texto
