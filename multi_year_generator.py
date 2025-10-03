@@ -267,7 +267,7 @@ def show_specific_clients_selector(clients_df):
             for client_id in selected_client_ids:
                 client = get_client_by_id(client_id)
                 if client is not None and not client.empty:
-                    st.write(f"• {client['name']} ({client['codigo_ag']}) - {client['pais']}")
+                    st.write(f"- {client['name']} ({client['codigo_ag']}) - {client['pais']}")
 
 def show_type_selector(clients_df):
     """Selector por tipo de cliente"""
@@ -304,7 +304,7 @@ def show_type_selector(clients_df):
             with st.expander("Ver muestra de clientes"):
                 sample_size = min(10, len(filtered_clients))
                 for _, client in filtered_clients.head(sample_size).iterrows():
-                    st.write(f"• {client['name']} ({client['codigo_ag']}) - {client['pais']}")
+                    st.write(f"- {client['name']} ({client['codigo_ag']}) - {client['pais']}")
                 if len(filtered_clients) > sample_size:
                     st.write(f"... y {len(filtered_clients) - sample_size} más")
 
@@ -343,7 +343,7 @@ def show_region_selector(clients_df):
             with st.expander("Ver muestra de clientes"):
                 sample_size = min(10, len(filtered_clients))
                 for _, client in filtered_clients.head(sample_size).iterrows():
-                    st.write(f"• {client['name']} ({client['codigo_ag']}) - {client['pais']}")
+                    st.write(f"- {client['name']} ({client['codigo_ag']}) - {client['pais']}")
                 if len(filtered_clients) > sample_size:
                     st.write(f"... y {len(filtered_clients) - sample_size} más")
 
@@ -364,7 +364,7 @@ def show_country_selector(clients_df):
             with st.expander("Ver muestra de clientes"):
                 sample_size = min(10, len(filtered_clients))
                 for _, client in filtered_clients.head(sample_size).iterrows():
-                    st.write(f"• {client['name']} ({client['codigo_ag']})")
+                    st.write(f"- {client['name']} ({client['codigo_ag']})")
                 if len(filtered_clients) > sample_size:
                     st.write(f"... y {len(filtered_clients) - sample_size} más")
         return
@@ -399,7 +399,7 @@ def show_country_selector(clients_df):
             with st.expander("Ver muestra de clientes"):
                 sample_size = min(10, len(filtered_clients))
                 for _, client in filtered_clients.head(sample_size).iterrows():
-                    st.write(f"• {client['name']} ({client['codigo_ag']})")
+                    st.write(f"- {client['name']} ({client['codigo_ag']})")
                 if len(filtered_clients) > sample_size:
                     st.write(f"... y {len(filtered_clients) - sample_size} más")
 
@@ -970,13 +970,13 @@ def execute_generation(preview_data):
                         total_dates_saved += dates_saved
                 
                 success_count += 1
-                debug_info.success(f"✓ {item['client_name']}: {client_dates_saved} fechas guardadas")
+                debug_info.success(f"OK {item['client_name']}: {client_dates_saved} fechas guardadas")
                 
             except Exception as e:
                 error_count += 1
                 error_msg = f"{item['client_name']} ({item['year']}): {str(e)}"
                 errors.append(error_msg)
-                debug_info.error(f"❌ Error: {error_msg}")
+                debug_info.error(f"ERROR: {error_msg}")
             
             # Actualizar barra de progreso
             progress_bar.progress((i + 1) / total_operations)
@@ -1010,7 +1010,7 @@ def execute_generation(preview_data):
             st.error(f"Errores durante la generación: {error_count}")
             with st.expander("Ver errores"):
                 for error in errors:
-                    st.write(f"• {error}")
+                    st.write(f"- {error}")
 
 def export_preview_data(preview_data):
     """Exporta los datos del preview a un archivo CSV"""

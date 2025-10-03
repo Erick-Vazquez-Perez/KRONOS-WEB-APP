@@ -336,8 +336,8 @@ class AuthSystem:
                 user_info = f"""
                 <div style="font-size: 0.8em; color: #666;">
                 <strong>{user['name']}</strong><br>
-                <code>{user['username']}</code> • {role_name}<br>
-                {status} • {user['login_time'].strftime('%H:%M')}
+                <code>{user['username']}</code> - {role_name}<br>
+                {status} - {user['login_time'].strftime('%H:%M')}
                 """
                 
                 # Agregar información del filtro de país si existe

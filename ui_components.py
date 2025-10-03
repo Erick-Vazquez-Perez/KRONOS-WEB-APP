@@ -267,7 +267,7 @@ def show_clients_gallery():
             active_filters.append(f"Orden: {sort_by}")
         
         if active_filters:
-            st.caption(f"Filtros activos: {' • '.join(active_filters)}")
+            st.caption(f"Filtros activos: {' | '.join(active_filters)}")
     
     clients_to_show = filtered_clients
     
@@ -510,7 +510,7 @@ def show_client_detail():
         st.error("Cliente no encontrado. Es posible que haya sido eliminado.")
         
         # Botón para regresar a la galería
-        if st.button("← Regresar a la Galería"):
+        if st.button("< Regresar a la Galería"):
             st.session_state.show_client_detail = False
             st.session_state.selected_client = None
             # Limpiar estados de edición
@@ -523,7 +523,7 @@ def show_client_detail():
     # Botones de navegación y acciones
     col1, col2, col3 = st.columns([1, 1, 6])
     with col1:
-        if st.button("← Regresar"):
+        if st.button("< Regresar"):
             st.session_state.show_client_detail = False
             st.session_state.selected_client = None
             # Limpiar estados de edición
@@ -2140,23 +2140,23 @@ def show_client_data_tab_improved(client):
                     return value
             
             if name != get_original_value('name'):
-                st.write(f"• **Nombre:** '{get_original_value('name')}' → '{name}'")
+                st.write(f"- **Nombre:** '{get_original_value('name')}' -> '{name}'")
             if codigo_ag != get_original_value('codigo_ag'):
-                st.write(f"• **Código AG:** '{get_original_value('codigo_ag')}' → '{codigo_ag}'")
+                st.write(f"- **Código AG:** '{get_original_value('codigo_ag')}' -> '{codigo_ag}'")
             if codigo_we != get_original_value('codigo_we'):
-                st.write(f"• **Código WE:** '{get_original_value('codigo_we')}' → '{codigo_we}'")
+                st.write(f"- **Código WE:** '{get_original_value('codigo_we')}' -> '{codigo_we}'")
             if csr != get_original_value('csr'):
-                st.write(f"• **CSR:** '{get_original_value('csr')}' → '{csr}'")
+                st.write(f"- **CSR:** '{get_original_value('csr')}' -> '{csr}'")
             if vendedor != get_original_value('vendedor'):
-                st.write(f"• **Vendedor:** '{get_original_value('vendedor')}' → '{vendedor}'")
+                st.write(f"- **Vendedor:** '{get_original_value('vendedor')}' -> '{vendedor}'")
             if calendario_sap != get_original_value('calendario_sap'):
-                st.write(f"• **Calendario SAP:** '{get_original_value('calendario_sap')}' → '{calendario_sap}'")
+                st.write(f"- **Calendario SAP:** '{get_original_value('calendario_sap')}' -> '{calendario_sap}'")
             if tipo_cliente != get_original_value('tipo_cliente'):
-                st.write(f"• **Tipo Cliente:** '{get_original_value('tipo_cliente')}' → '{tipo_cliente}'")
+                st.write(f"- **Tipo Cliente:** '{get_original_value('tipo_cliente')}' -> '{tipo_cliente}'")
             if region != get_original_value('region'):
-                st.write(f"• **Región:** '{get_original_value('region')}' → '{region}'")
+                st.write(f"- **Región:** '{get_original_value('region')}' -> '{region}'")
             if pais != get_original_value('pais'):
-                st.write(f"• **País:** '{get_original_value('pais')}' → '{pais}'")
+                st.write(f"- **País:** '{get_original_value('pais')}' -> '{pais}'")
     
     # Botones de acción (solo en modo edición)
     if not readonly:
@@ -2254,7 +2254,7 @@ def show_activities_management_tab(client):
         if not activities.empty:
             # Mostrar solo información de lectura
             for _, activity in activities.iterrows():
-                st.write(f"• **{activity['activity_name']}**")
+                st.write(f"- **{activity['activity_name']}**")
         else:
             st.info("No hay actividades configuradas para este cliente.")
         return
