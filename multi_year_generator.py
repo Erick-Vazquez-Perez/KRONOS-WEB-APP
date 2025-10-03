@@ -135,35 +135,35 @@ def show_client_selector():
     # Obtener clientes disponibles
     try:
         clients_df = get_clients(use_cache=True)
-        # st.write(f"Debug: Se obtuvieron {len(clients_df)} clientes de la base de datos")  # Comentado para producción
+        st.write(f"Debug: Se obtuvieron {len(clients_df)} clientes de la base de datos")  # Habilitado temporalmente para debug
         
         if clients_df.empty:
             st.error("No hay clientes disponibles en la base de datos")
             
             with st.expander("Información de troubleshooting"):
                 st.info("Posibles causas y soluciones:")
-                st.write("✓ **Verificar base de datos**: Asegúrate de que la aplicación esté conectada a la base de datos correcta")
-                st.write("✓ **Verificar datos**: Confirma que existan clientes en el sistema")
-                st.write("✓ **Verificar permisos**: El usuario debe tener permisos para ver clientes")
-                st.write("✓ **Reiniciar aplicación**: A veces ayuda recargar la página")
+                st.write("- **Verificar base de datos**: Asegúrate de que la aplicación esté conectada a la base de datos correcta")
+                st.write("- **Verificar datos**: Confirma que existan clientes en el sistema")
+                st.write("- **Verificar permisos**: El usuario debe tener permisos para ver clientes")
+                st.write("- **Reiniciar aplicación**: A veces ayuda recargar la página")
                 
                 # Intentar mostrar información adicional de la base de datos
                 try:
-                    from database import get_db_connection
-                    conn = get_db_connection()
+                    from database import get_pooled_connection, return_pooled_connection
+                    conn = get_pooled_connection()
                     cursor = conn.cursor()
                     cursor.execute("SELECT COUNT(*) FROM clients")
                     count = cursor.fetchone()[0]
-                    st.write(f"📊 **Total registros en tabla clients**: {count}")
+                    st.write(f"Total registros en tabla clients: {count}")
                     
                     if count > 0:
                         st.warning("Existen clientes en la base de datos, pero la función get_clients() no los está retornando. Esto podría ser un problema de permisos o filtros.")
                     else:
                         st.warning("No hay registros en la tabla clients. Necesitas agregar clientes primero.")
                     
-                    conn.close()
+                    return_pooled_connection(conn)
                 except Exception as db_e:
-                    st.write(f"❌ **Error verificando base de datos**: {db_e}")
+                    st.write(f"Error verificando base de datos: {db_e}")
             
             return
         
@@ -172,7 +172,7 @@ def show_client_selector():
             user_country = get_user_country_filter()
             original_count = len(clients_df)
             clients_df = clients_df[clients_df['pais'] == user_country]
-            st.write(f"Debug: Filtro de país aplicado. Clientes antes: {original_count}, después: {len(clients_df)}")
+            # st.write(f"Debug: Filtro de país aplicado. Clientes antes: {original_count}, después: {len(clients_df)}")
             
             if clients_df.empty:
                 st.warning(f"No hay clientes disponibles para el país: {user_country}")
@@ -182,6 +182,21 @@ def show_client_selector():
         st.error(f"Error obteniendo clientes: {e}")
         st.write("Detalles del error para debug:")
         st.code(str(e))
+        st.write("Tipo de error:", type(e).__name__)
+        
+        # Intentar una consulta directa como fallback
+        try:
+            st.write("Intentando consulta directa...")
+            from database import get_pooled_connection, return_pooled_connection
+            conn = get_pooled_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM clients")
+            count = cursor.fetchone()[0]
+            st.write(f"Consulta directa exitosa: {count} clientes en la base de datos")
+            return_pooled_connection(conn)
+        except Exception as direct_e:
+            st.write(f"Error en consulta directa: {direct_e}")
+        
         return
     
     # Mostrar selector según el tipo elegido
