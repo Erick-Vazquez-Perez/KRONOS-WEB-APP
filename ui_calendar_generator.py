@@ -57,20 +57,20 @@ def show_multiple_clients_frequencies(clients, max_clients_to_show=5):
     clients_to_show = clients[:max_clients_to_show]
     remaining_clients = len(clients) - len(clients_to_show)
     
-    st.markdown("**📋 Frecuencias de Clientes Seleccionados:**")
+    st.markdown("**Frecuencias de Clientes Seleccionados:**")
     
     for client in clients_to_show:
         client_id = client.get('id')
         client_name = client.get('nombre_cliente', 'Cliente')
         
         if client_id:
-            with st.expander(f"📅 {client_name} (ID: {client_id})", expanded=False):
+            with st.expander(f"{client_name} (ID: {client_id})", expanded=False):
                 get_client_real_frequencies_table(client_id, client_name)
         else:
             st.warning(f"Cliente {client_name} no tiene ID válido")
     
     if remaining_clients > 0:
-        st.info(f"📊 Se muestran los primeros {max_clients_to_show} clientes. Hay {remaining_clients} clientes adicionales seleccionados.")
+        st.info(f"Se muestran los primeros {max_clients_to_show} clientes. Hay {remaining_clients} clientes adicionales seleccionados.")
 
 def show_calendar_generator():
     """
@@ -116,7 +116,7 @@ def show_calendar_generator():
         )
         
         # Mostrar información sobre el método usado
-        st.info("📊 **Fechas desde Base de Datos**: Se usarán únicamente las fechas almacenadas en la base de datos. Si no existen fechas para el año seleccionado, no se generará calendario.")
+        st.info("**Fechas desde Base de Datos**: Se usarán únicamente las fechas almacenadas en la base de datos. Si no existen fechas para el año seleccionado, no se generará calendario.")
     
     st.divider()
     
@@ -162,23 +162,23 @@ def show_calendar_generator():
                                     freq_list.append(f"{activity_name}: {frequency_name}")
                             
                             if freq_list:
-                                st.markdown(f"  📋 *{'; '.join(freq_list)}*")
+                                st.markdown(f"*{'; '.join(freq_list)}*")
                         else:
-                            st.markdown(f"  ⚠️ *Sin frecuencias configuradas*")
+                            st.markdown(f"*Sin frecuencias configuradas*")
                     except Exception as e:
-                        st.markdown(f"  ❌ *Error obteniendo frecuencias*")
+                        st.markdown(f"*Error obteniendo frecuencias*")
                 else:
-                    st.markdown(f"  ❌ *Cliente sin ID válido*")
+                    st.markdown(f"*Cliente sin ID válido*")
         
         st.divider()
         
         # Botón de generación
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("Generar Calendarios", type="primary", use_container_width=True):
+            if st.button("Generar Cartas", type="primary", use_container_width=True):
                 generate_calendars(selected_clients, selected_year, template_path)
     else:
-        st.warning("No hay clientes seleccionados para generar calendarios.")
+        st.warning("No hay clientes seleccionados para generar Cartas.")
 
 def show_individual_client_selection(country_filter=None):
     """
@@ -398,9 +398,9 @@ def generate_calendars(clients, year, template_path):
                 with open(generated_files[0], "rb") as file:
                     file_data = file.read()
                 
-                st.success(f"Calendario generado exitosamente!")
+                st.success(f"Carta generada exitosamente!")
                 st.download_button(
-                    label="Descargar Calendario",
+                    label="Descargar Carta",
                     data=file_data,
                     file_name=os.path.basename(generated_files[0]),
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -414,11 +414,11 @@ def generate_calendars(clients, year, template_path):
                 with open(zip_path, "rb") as zip_file:
                     zip_data = zip_file.read()
                 
-                st.success(f"Se generaron {len(generated_files)} calendarios exitosamente!")
+                st.success(f"Se generaron {len(generated_files)} cartas exitosamente!")
                 st.download_button(
-                    label="Descargar Calendarios (ZIP)",
+                    label="Descargar Cartas (ZIP)",
                     data=zip_data,
-                    file_name=f"Calendarios_GL_{year}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                    file_name=f"Cartas_GL_{year}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
                     mime="application/zip"
                 )
         else:

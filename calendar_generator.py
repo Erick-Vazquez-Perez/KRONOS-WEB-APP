@@ -4,7 +4,6 @@ Toma datos de clientes de la base de datos y genera calendarios en Word
 """
 
 import pandas as pd
-import pandas as pd
 from datetime import datetime, timedelta
 from docx import Document
 from docx.shared import Pt
@@ -17,16 +16,28 @@ import tempfile
 import zipfile
 from database import get_clients, get_calculated_dates, get_client_activities, get_frequency_template_by_id
 
-# Configurar locale para fechas en español
-import locale
-try:
-    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
-except locale.Error:
-    try:
-        locale.setlocale(locale.LC_TIME, 'Spanish_Spain.1252')
-    except locale.Error:
-        # Fallback para sistemas que no tienen locale español
-        pass
+# Mapeo de meses en español (independiente del locale del sistema)
+MESES_ES = {
+    1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
+    7: 'jul', 8: 'ago', 9: 'sep', 10: 'oct', 11: 'nov', 12: 'dic'
+}
+
+def format_date_spanish(date_obj):
+    """
+    Formatea una fecha en formato español: 01-ene, 15-mar, etc.
+    
+    Args:
+        date_obj: datetime object
+    
+    Returns:
+        str: Fecha formateada en español (ej: '01-ene')
+    """
+    if not isinstance(date_obj, datetime):
+        return ''
+    
+    day = date_obj.day
+    month = MESES_ES.get(date_obj.month, 'xxx')
+    return f"{day:02d}-{month}"
 
 class CalendarGenerator:
     def __init__(self, template_path=None):
@@ -106,8 +117,8 @@ class CalendarGenerator:
             # Asegurar que no pasemos del año
             if entrega_date <= end_date:
                 dates_data.append({
-                    'Fecha envío OC': oc_date.strftime('%d-%b').lower(),
-                    'Fecha Entrega': entrega_date.strftime('%d-%b').lower()
+                    'Fecha envío OC': format_date_spanish(oc_date),
+                    'Fecha Entrega': format_date_spanish(entrega_date)
                 })
             
             # Siguiente fecha
@@ -182,11 +193,12 @@ class CalendarGenerator:
             oc_dates = self.calculate_specific_dates_from_frequency(frequency_name, year)
             
             # Crear fechas de entrega (6 días después de OC)
+            all_dates = []
             for oc_date in oc_dates:
                 entrega_date = oc_date + timedelta(days=6)
                 all_dates.append({
-                    'Fecha envío OC': oc_date.strftime('%d-%b').lower(),
-                    'Fecha Entrega': entrega_date.strftime('%d-%b').lower()
+                    'Fecha envío OC': format_date_spanish(oc_date),
+                    'Fecha Entrega': format_date_spanish(entrega_date)
                 })
             
             return all_dates
@@ -340,10 +352,12 @@ class CalendarGenerator:
                 entrega_date = None
                 
                 if i < len(oc_dates):
-                    oc_date = oc_dates.iloc[i]['date'].strftime('%d-%b').lower()
+                    oc_date_obj = oc_dates.iloc[i]['date']
+                    oc_date = format_date_spanish(oc_date_obj)
                 
                 if i < len(entrega_dates):
-                    entrega_date = entrega_dates.iloc[i]['date'].strftime('%d-%b').lower()
+                    entrega_date_obj = entrega_dates.iloc[i]['date']
+                    entrega_date = format_date_spanish(entrega_date_obj)
                 
                 # Solo añadir si tenemos al menos una fecha
                 if oc_date or entrega_date:

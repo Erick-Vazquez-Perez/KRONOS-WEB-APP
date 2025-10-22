@@ -92,7 +92,7 @@ def main():
     
     # Información sobre funciones futuras
     st.sidebar.markdown("### Próximamente")
-    st.sidebar.info("Exportación avanzada")
+    st.sidebar.info("Integración de Power Automate")
     
     # Mostrar información del usuario al final de la sidebar
     auth_system.show_user_info_bottom()

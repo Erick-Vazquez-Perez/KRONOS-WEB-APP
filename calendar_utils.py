@@ -206,7 +206,7 @@ def format_frequency_description(frequency_type, frequency_config):
             weekday_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
             weekday = weekday_names[config.get('weekday', 0)]
             weeks = config.get('weeks', [])
-            weeks_text = ", ".join([f"{w} deg" for w in weeks])
+            weeks_text = ", ".join([f"{w}°" for w in weeks])
             return f"{weeks_text} {weekday} del mes"
         
         elif frequency_type == "specific_days":
