@@ -170,8 +170,8 @@ def get_delivery_anomalies(country_filter=None):
     
     return df
 
-def get_monthly_oc_data(year, month, country_filter=None):
-    """Obtiene los datos de fechas OC para un mes específico con filtro por país"""
+def get_monthly_delivery_data(year, month, country_filter=None):
+    """Obtiene los datos de fechas de Entrega para un mes específico con filtro por país"""
     conn = get_db_connection()
     
     # Crear las fechas de inicio y fin del mes
@@ -186,10 +186,10 @@ def get_monthly_oc_data(year, month, country_filter=None):
         query = """
         SELECT 
             cd.date,
-            COUNT(*) as cantidad_oc
+            COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_name = 'Fecha Envío OC' 
+        WHERE cd.activity_name LIKE '%Entrega%' 
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         AND c.pais = ?
         GROUP BY date(cd.date)
@@ -200,10 +200,10 @@ def get_monthly_oc_data(year, month, country_filter=None):
         query = """
         SELECT 
             cd.date,
-            COUNT(*) as cantidad_oc
+            COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_name = 'Fecha Envío OC' 
+        WHERE cd.activity_name LIKE '%Entrega%' 
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
@@ -254,21 +254,45 @@ def get_activity_counts(country_filter=None):
     
     return df
 
-def create_oc_line_chart(monthly_data, selected_month_name):
-    """Crea el gráfico de línea para las fechas OC del mes"""
+def get_total_clients_count(country_filter=None):
+    """Obtiene el total de clientes en el sistema con filtro por país"""
+    conn = get_db_connection()
+    
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT COUNT(*) as total_clientes
+        FROM clients
+        WHERE pais = ?
+        """
+        result = pd.read_sql_query(query, conn, params=(country_filter,))
+    else:
+        query = """
+        SELECT COUNT(*) as total_clientes
+        FROM clients
+        """
+        result = pd.read_sql_query(query, conn)
+    
+    conn.close()
+    
+    total = result['total_clientes'].iloc[0] if not result.empty else 0
+    return total
+
+def create_delivery_line_chart(monthly_data, selected_month_name):
+    """Crea el gráfico de línea para las fechas de Entrega del mes"""
     if monthly_data.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text="No hay datos de fechas OC para este mes",
+            text="No hay datos de fechas de Entrega para este mes",
             xref="paper", yref="paper",
             x=0.5, y=0.5, xanchor='center', yanchor='middle',
             showarrow=False,
             font=dict(size=14, color="#666666")
         )
         fig.update_layout(
-            title=f"Fechas OC en {selected_month_name}",
+            title=f"Fechas de Entrega en {selected_month_name}",
             xaxis_title="Día del mes",
-            yaxis_title="Cantidad de fechas OC",
+            yaxis_title="Cantidad de fechas de Entrega",
             height=400,
             showlegend=False
         )
@@ -279,29 +303,29 @@ def create_oc_line_chart(monthly_data, selected_month_name):
     # Línea principal
     fig.add_trace(go.Scatter(
         x=monthly_data['day'],
-        y=monthly_data['cantidad_oc'],
+        y=monthly_data['cantidad_entregas'],
         mode='lines+markers',
-        name='Fechas OC',
-        line=dict(color='#1f77b4', width=3),
-        marker=dict(size=8, color='#1f77b4'),
-        hovertemplate='<b>Día %{x}</b><br>Fechas OC: %{y}<extra></extra>'
+        name='Fechas Entrega',
+        line=dict(color='#2ca02c', width=3),
+        marker=dict(size=8, color='#2ca02c'),
+        hovertemplate='<b>Día %{x}</b><br>Fechas Entrega: %{y}<extra></extra>'
     ))
     
     # Área bajo la curva
     fig.add_trace(go.Scatter(
         x=monthly_data['day'],
-        y=monthly_data['cantidad_oc'],
+        y=monthly_data['cantidad_entregas'],
         fill='tozeroy',
         mode='none',
         name='Área',
-        fillcolor='rgba(31, 119, 180, 0.1)',
+        fillcolor='rgba(44, 160, 44, 0.1)',
         showlegend=False
     ))
     
     fig.update_layout(
         title=" ",
         xaxis_title="Día del mes",
-        yaxis_title="Cantidad de fechas OC",
+        yaxis_title="Cantidad de fechas de Entrega",
         height=400,
         hovermode='x unified',
         plot_bgcolor='white',
@@ -335,7 +359,7 @@ def show_dashboard():
     # Si el usuario tiene un filtro de país fijo (como GLCOUser)
     if has_country_filter():
         dashboard_country_filter = get_user_country_filter()
-        st.info(f"🌍 Vista filtrada: Dashboard de **{dashboard_country_filter}**")
+        st.info(f"Vista filtrada: Dashboard de **{dashboard_country_filter}**")
     
     # Si es administrador, mostrar selector de país
     elif auth_system.is_admin():
@@ -357,9 +381,9 @@ def show_dashboard():
         
         with col2:
             if dashboard_country_filter:
-                st.success(f"📊 Mostrando datos de: **{dashboard_country_filter}**")
+                st.success(f"Mostrando datos de: **{dashboard_country_filter}**")
             else:
-                st.info("📊 Mostrando datos de **todos los países**")
+                st.info("Mostrando datos de **todos los países**")
         
         st.divider()
     
@@ -552,6 +576,7 @@ def show_dashboard():
     
     # Obtener datos para las métricas
     activity_counts = get_activity_counts(dashboard_country_filter)
+    total_clients = get_total_clients_count(dashboard_country_filter)
     
     # Crear diccionario de métricas
     metrics = {}
@@ -561,10 +586,20 @@ def show_dashboard():
             'clientes': row['clientes_con_actividad']
         }
     
-    # Mostrar tarjetas de métricas (solo 3 columnas)
-    col1, col2, col3 = st.columns(3)
+    # Mostrar tarjetas de métricas (4 columnas incluyendo total de clientes)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
+        # Primera métrica: Total de Clientes
+        country_label = f"{dashboard_country_filter}" if dashboard_country_filter else "sistema"
+        st.markdown(get_metric_card_html(
+            "Total Clientes", 
+            str(total_clients), 
+            f"en {country_label}",
+            "#9467bd"
+        ), unsafe_allow_html=True)
+    
+    with col2:
         oc_total = metrics.get('Fecha Envío OC', {}).get('total', 0)
         oc_clientes = metrics.get('Fecha Envío OC', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
@@ -574,7 +609,7 @@ def show_dashboard():
             "#1f77b4"
         ), unsafe_allow_html=True)
     
-    with col2:
+    with col3:
         alb_total = metrics.get('Albaranado', {}).get('total', 0)
         alb_clientes = metrics.get('Albaranado', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
@@ -584,7 +619,7 @@ def show_dashboard():
             "#ff7f0e"
         ), unsafe_allow_html=True)
     
-    with col3:
+    with col4:
         ent_total = metrics.get('Fecha Entrega', {}).get('total', 0)
         ent_clientes = metrics.get('Fecha Entrega', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
@@ -596,9 +631,9 @@ def show_dashboard():
     
     st.markdown("---")
     
-    # ========== SELECTOR Y GRÁFICO DE FECHAS OC ==========
+    # ========== SELECTOR Y GRÁFICO DE FECHAS DE ENTREGA ==========
     analysis_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
-    st.subheader(f"Análisis de Fechas OC por Mes{analysis_suffix}")
+    st.subheader(f"Análisis de Fechas de Entrega por Mes{analysis_suffix}")
     
     # Selector de año y mes
     col_year, col_month = st.columns(2)
@@ -630,29 +665,29 @@ def show_dashboard():
     country_text = f" ({dashboard_country_filter})" if dashboard_country_filter else ""
     
     if selected_date < current_month_date:
-        chart_subtitle = f"Fechas OC del mes vencido ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"Fechas de Entrega del mes vencido ({chart_month_name} {chart_year}){country_text}"
     elif selected_date > current_month_date:
-        chart_subtitle = f"Fechas OC del mes próximo ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"Fechas de Entrega del mes próximo ({chart_month_name} {chart_year}){country_text}"
     else:
-        chart_subtitle = f"Fechas OC del mes actual ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"Fechas de Entrega del mes actual ({chart_month_name} {chart_year}){country_text}"
     
     st.subheader(chart_subtitle)
     
     # Obtener datos del mes seleccionado para la gráfica
-    monthly_data = get_monthly_oc_data(chart_year, chart_month, dashboard_country_filter)
+    monthly_data = get_monthly_delivery_data(chart_year, chart_month, dashboard_country_filter)
     
     if not monthly_data.empty:
-        total_oc_month = monthly_data['cantidad_oc'].sum()
+        total_delivery_month = monthly_data['cantidad_entregas'].sum()
         country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
-        st.info(f"**{total_oc_month} fechas OC** programadas en {chart_month_name} {chart_year}{country_info}")
+        st.info(f"**{total_delivery_month} fechas de Entrega** programadas en {chart_month_name} {chart_year}{country_info}")
         
         # Mostrar gráfico de línea del mes
-        line_chart = create_oc_line_chart(monthly_data, chart_month_name)
+        line_chart = create_delivery_line_chart(monthly_data, chart_month_name)
         st.plotly_chart(line_chart, use_container_width=True)
         
     else:
         country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
-        st.success(f"No hay fechas OC programadas para {chart_month_name} {chart_year}{country_info}")
+        st.success(f"No hay fechas de Entrega programadas para {chart_month_name} {chart_year}{country_info}")
     
     st.markdown("---")
 

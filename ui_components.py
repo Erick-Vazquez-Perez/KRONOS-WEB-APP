@@ -663,24 +663,11 @@ def show_client_detail():
         total_dates = len(dates_df)
         activities_count = len(dates_df['activity_name'].unique())
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             st.metric("Total de Fechas", total_dates)
         with col2:
             st.metric("Actividades", activities_count)
-        with col3:
-            # Próxima fecha
-            try:
-                future_dates = dates_df[pd.to_datetime(dates_df['date']) > datetime.now()]
-                if not future_dates.empty:
-                    next_date = future_dates.iloc[0]['date']
-                    next_date_obj = datetime.strptime(next_date, '%Y-%m-%d')
-                    days_until = (next_date_obj - datetime.now()).days
-                    st.metric("Próxima Fecha en", f"{days_until} días")
-                else:
-                    st.metric("Próxima Fecha en", "N/A")
-            except:
-                st.metric("Próxima Fecha en", "N/A")
     
     # Mostrar vista según selección
     try:
