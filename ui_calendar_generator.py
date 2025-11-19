@@ -88,6 +88,8 @@ def show_calendar_generator():
     
     # Filtro de país del usuario
     country_filter = None
+    
+    # Si el usuario tiene un filtro de país fijo (como GLCOUser)
     if has_country_filter():
         country_filter = get_user_country_filter()
         st.info(f"Vista filtrada: Generando calendarios para clientes de **{country_filter}**")
@@ -95,7 +97,8 @@ def show_calendar_generator():
     # Configuración de generación
     st.subheader("Configuración de Generación")
     
-    col1, col2 = st.columns(2)
+    # Fila con 3 columnas para incluir el filtro de país
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         # Selector de modo de generación
@@ -114,9 +117,29 @@ def show_calendar_generator():
             index=1 if current_year < 2025 else 0,
             help="Selecciona el año para el cual generar los calendarios"
         )
-        
-        # Mostrar información sobre el método usado
-        st.info("**Fechas desde Base de Datos**: Se usarán únicamente las fechas almacenadas en la base de datos. Si no existen fechas para el año seleccionado, no se generará calendario.")
+    
+    with col3:
+        # Filtro de país (solo si no tiene filtro fijo)
+        if not has_country_filter():
+            from client_constants import get_paises
+            paises_options = ['Todos los países'] + get_paises()
+            selected_country = st.selectbox(
+                "Filtrar por país:",
+                paises_options,
+                index=0,
+                key="calendar_country_filter",
+                help="Selecciona un país para filtrar los clientes"
+            )
+            
+            if selected_country != 'Todos los países':
+                country_filter = selected_country
+                st.info(f"Filtrando: **{country_filter}**")
+        else:
+            # Mostrar el país filtrado como información
+            st.metric("País filtrado", country_filter)
+    
+    # Mostrar información sobre el método usado
+    st.info("**Fechas desde Base de Datos**: Se usarán únicamente las fechas almacenadas en la base de datos. Si no existen fechas para el año seleccionado, no se generará calendario.")
     
     st.divider()
     

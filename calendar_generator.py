@@ -320,7 +320,7 @@ class CalendarGenerator:
         """
         client_id = client_data.get('id')
         if not client_id:
-            print(f"⚠️  Cliente sin ID - no se pueden obtener fechas de la BDD")
+            print(f"Cliente sin ID - no se pueden obtener fechas de la BDD")
             return []
         
         try:
@@ -328,7 +328,7 @@ class CalendarGenerator:
             calculated_dates_df = get_calculated_dates(client_id)
             
             if calculated_dates_df.empty:
-                print(f"⚠️  No hay fechas en la BD para el cliente {client_id}")
+                print(f"No hay fechas en la BD para el cliente {client_id}")
                 return []
             
             # Filtrar fechas para el año específico
@@ -336,7 +336,7 @@ class CalendarGenerator:
             year_dates = calculated_dates_df[calculated_dates_df['date'].dt.year == year]
             
             if year_dates.empty:
-                print(f"⚠️  No hay fechas en la BD para el cliente {client_id} en el año {year}")
+                print(f"No hay fechas en la BD para el cliente {client_id} en el año {year}")
                 return []
             
             # Organizar fechas por actividad
@@ -366,11 +366,11 @@ class CalendarGenerator:
                         'Fecha Entrega': entrega_date or ''
                     })
             
-            print(f"✅ Obtenidas {len(dates_data)} fechas de la BD para cliente {client_id} año {year}")
+            print(f"Obtenidas {len(dates_data)} fechas de la BD para cliente {client_id} año {year}")
             return dates_data
             
         except Exception as e:
-            print(f"❌ Error obteniendo fechas de la BD para cliente {client_id}: {e}")
+            print(f"Error obteniendo fechas de la BD para cliente {client_id}: {e}")
             return []
     
     def create_calendar_table_data(self, client_data, year=2025):
@@ -382,7 +382,7 @@ class CalendarGenerator:
         
         # Si no hay fechas en BD, retornar vacío (NO generar algorítmicamente)
         if not dates:
-            print(f"⚠️  No hay fechas en la BDD para el cliente {client_data.get('id')} en el año {year}")
+            print(f"No hay fechas en la BDD para el cliente {client_data.get('id')} en el año {year}")
             dates = []
         
         # Crear estructura de tabla similar a la imagen
@@ -561,12 +561,17 @@ class CalendarGenerator:
 def get_clients_by_type(tipo_cliente=None, country_filter=None):
     """
     Obtiene clientes filtrados por tipo y/o país
+    NOTA: get_clients() ya aplica el filtro de país del usuario automáticamente
     """
-    df_clients = get_clients()
+    # get_clients() ya aplica filtros de usuario automáticamente (ej: país para glcouser)
+    df_clients = get_clients(use_cache=True)
     
     # Convertir DataFrame a lista de diccionarios
     if df_clients.empty:
+        print("get_clients() retornó DataFrame vacío")
         return []
+    
+    print(f"get_clients() retornó {len(df_clients)} clientes")
     
     clients = df_clients.to_dict('records')
     
@@ -574,21 +579,28 @@ def get_clients_by_type(tipo_cliente=None, country_filter=None):
     for client in clients:
         # Asegurar que el ID esté disponible
         if 'id' not in client:
-            print(f"Advertencia: Cliente {client.get('name', 'Desconocido')} no tiene ID")
+            print(f"Cliente {client.get('name', 'Desconocido')} no tiene ID")
         
         # Mapear campos a nombres esperados por la interfaz
         if 'name' in client and 'nombre_cliente' not in client:
             client['nombre_cliente'] = client['name']
         
-        # Los campos tipo_cliente y pais ya existen con los nombres correctos
-        # Solo añadir si no existen
+        # Mapear tipo_cliente y pais
         if 'tipo_cliente' not in client and 'type' in client:
             client['tipo_cliente'] = client['type']
         if 'pais' not in client and 'country' in client:
             client['pais'] = client['country']
         
+        # Asegurar que siempre tengamos pais (fallback)
+        if 'pais' not in client or not client['pais']:
+            client['pais'] = 'N/A'
+        
+        # Asegurar que siempre tengamos tipo_cliente (fallback)
+        if 'tipo_cliente' not in client or not client['tipo_cliente']:
+            client['tipo_cliente'] = 'N/A'
+        
         # Inferir frecuencia del calendario_sap si no existe (solo como fallback)
-        if 'frecuencia' not in client:
+        if 'frecuencia' not in client or not client['frecuencia']:
             calendario_sap = client.get('calendario_sap', '')
             if calendario_sap:
                 if calendario_sap.startswith('Q') or '15' in calendario_sap:
@@ -608,13 +620,22 @@ def get_clients_by_type(tipo_cliente=None, country_filter=None):
             else:
                 client['frecuencia'] = 'Mensual'
     
-    # Aplicar filtros adicionales si no están ya aplicados por get_clients()
+    print(f"Procesados {len(clients)} clientes con campos mapeados")
+    
+    # Aplicar filtro de tipo SOLO si se especifica y no es 'Todos'
     if tipo_cliente and tipo_cliente != 'Todos':
+        clients_before = len(clients)
         clients = [c for c in clients if c.get('tipo_cliente') == tipo_cliente]
+        print(f"Filtro por tipo '{tipo_cliente}': {clients_before} -> {len(clients)} clientes")
     
-    if country_filter:
+    # NO aplicar filtro de país adicional aquí porque get_clients() ya lo hace automáticamente
+    # Solo filtrar si explícitamente se pasa un country_filter diferente (caso administrador)
+    if country_filter and country_filter != 'Todos los países':
+        clients_before = len(clients)
         clients = [c for c in clients if c.get('pais') == country_filter]
+        print(f"Filtro adicional por país '{country_filter}': {clients_before} -> {len(clients)} clientes")
     
+    print(f"Retornando {len(clients)} clientes finales")
     return clients
 
 def get_available_client_types():
