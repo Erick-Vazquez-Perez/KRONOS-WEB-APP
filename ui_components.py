@@ -369,7 +369,7 @@ def show_clients_gallery_view(clients_to_show):
     """Muestra los clientes en vista de galería (tarjetas)"""
     
     # Crear contenedor scrolleable con altura fija
-    with st.container(height=600):
+    with st.container(height=840):
         # Mostrar galería de clientes
         cols = st.columns(3)
         

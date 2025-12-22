@@ -621,11 +621,12 @@ def get_custom_css():
     /* ========== FOOTER ========== */
     .werfen-footer {
         text-align: center;
-        padding: 2rem;
-        margin-top: 3rem;
+        padding: 0.25rem 0;
+        margin-top: 0.5rem;
         border-top: 1px solid var(--werfen-gray-dark);
         color: var(--werfen-blue);
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+        line-height: 1.2;
     }
 
     /* ========== OCULTAR BOTÓN FULLSCREEN DE IMÁGENES ========== */
