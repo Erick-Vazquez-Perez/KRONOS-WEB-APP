@@ -14,6 +14,16 @@ from anomaly_detector import get_comprehensive_anomalies, get_holidays_for_month
 from auth_system import get_user_country_filter, has_country_filter, auth_system
 from client_constants import get_paises
 
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _cached_query_df(query: str, params: tuple):
+    """Cache ligero para DataFrames del dashboard (reduce roundtrips a BDD en reruns)."""
+    conn = get_db_connection()
+    try:
+        return pd.read_sql_query(query, conn, params=params)
+    finally:
+        conn.close()
+
 def get_tomorrow_oc_clients(country_filter=None):
     """Obtiene clientes con fecha OC para mañana (o lunes si hoy es viernes) - Versión optimizada con filtro por país"""
     today = datetime.now().date()
@@ -23,8 +33,6 @@ def get_tomorrow_oc_clients(country_filter=None):
         target_date = today + timedelta(days=3)  # Lunes
     else:
         target_date = today + timedelta(days=1)  # Mañana normal
-    
-    conn = get_db_connection()
     
     # Construir query con filtro de país opcional
     if country_filter:
@@ -37,7 +45,7 @@ def get_tomorrow_oc_clients(country_filter=None):
         AND c.pais = ?
         ORDER BY c.name
         """
-        df = pd.read_sql_query(query, conn, params=(target_date.strftime('%Y-%m-%d'), country_filter))
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'), country_filter))
     else:
         query = """
         SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
@@ -47,15 +55,12 @@ def get_tomorrow_oc_clients(country_filter=None):
         AND date(cd.date) = ?
         ORDER BY c.name
         """
-        df = pd.read_sql_query(query, conn, params=(target_date.strftime('%Y-%m-%d'),))
-    
-    conn.close()
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'),))
     
     return df
 
 def get_delivery_anomalies(country_filter=None):
     """Obtiene clientes donde la fecha de albaranado es mayor que la de entrega - solo del mes actual con filtro por país"""
-    conn = get_db_connection()
     
     # Obtener primer y último día del mes actual
     today = datetime.now().date()
@@ -101,7 +106,7 @@ def get_delivery_anomalies(country_filter=None):
         )
         ORDER BY c.name, alb.date_position
         """
-        df = pd.read_sql_query(query, conn, params=(
+        df = _cached_query_df(query, (
             country_filter,
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
@@ -140,7 +145,7 @@ def get_delivery_anomalies(country_filter=None):
         )
         ORDER BY c.name, alb.date_position
         """
-        df = pd.read_sql_query(query, conn, params=(
+        df = _cached_query_df(query, (
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'),
             first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')
         ))
@@ -166,13 +171,10 @@ def get_delivery_anomalies(country_filter=None):
             axis=1
         )
     
-    conn.close()
-    
     return df
 
 def get_monthly_delivery_data(year, month, country_filter=None):
     """Obtiene los datos de fechas de Entrega para un mes específico con filtro por país"""
-    conn = get_db_connection()
     
     # Crear las fechas de inicio y fin del mes
     start_date = date(year, month, 1)
@@ -195,7 +197,7 @@ def get_monthly_delivery_data(year, month, country_filter=None):
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
         """
-        df = pd.read_sql_query(query, conn, params=(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), country_filter))
+        df = _cached_query_df(query, (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), country_filter))
     else:
         query = """
         SELECT 
@@ -208,9 +210,7 @@ def get_monthly_delivery_data(year, month, country_filter=None):
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
         """
-        df = pd.read_sql_query(query, conn, params=(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
-    
-    conn.close()
+        df = _cached_query_df(query, (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     
     # Convertir fecha a datetime para mejor manejo
     if not df.empty:
@@ -221,7 +221,6 @@ def get_monthly_delivery_data(year, month, country_filter=None):
 
 def get_activity_counts(country_filter=None):
     """Obtiene el conteo de fechas por tipo de actividad con filtro por país"""
-    conn = get_db_connection()
     
     # Construir query con filtro de país opcional
     if country_filter:
@@ -236,7 +235,7 @@ def get_activity_counts(country_filter=None):
         GROUP BY cd.activity_name
         ORDER BY total_fechas DESC
         """
-        df = pd.read_sql_query(query, conn, params=(country_filter,))
+        df = _cached_query_df(query, (country_filter,))
     else:
         query = """
         SELECT 
@@ -248,15 +247,12 @@ def get_activity_counts(country_filter=None):
         GROUP BY cd.activity_name
         ORDER BY total_fechas DESC
         """
-        df = pd.read_sql_query(query, conn)
-    
-    conn.close()
+        df = _cached_query_df(query, tuple())
     
     return df
 
 def get_total_clients_count(country_filter=None):
     """Obtiene el total de clientes en el sistema con filtro por país"""
-    conn = get_db_connection()
     
     # Construir query con filtro de país opcional
     if country_filter:
@@ -265,15 +261,13 @@ def get_total_clients_count(country_filter=None):
         FROM clients
         WHERE pais = ?
         """
-        result = pd.read_sql_query(query, conn, params=(country_filter,))
+        result = _cached_query_df(query, (country_filter,))
     else:
         query = """
         SELECT COUNT(*) as total_clientes
         FROM clients
         """
-        result = pd.read_sql_query(query, conn)
-    
-    conn.close()
+        result = _cached_query_df(query, tuple())
     
     total = result['total_clientes'].iloc[0] if not result.empty else 0
     return total

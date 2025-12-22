@@ -96,7 +96,7 @@ class ConnectionPool:
         with self._lock:
             if self._connections:
                 return self._connections.pop()
-            return get_db_connection()
+            return get_raw_db_connection()
     
     def return_connection(self, conn):
         with self._lock:
@@ -109,6 +109,49 @@ class ConnectionPool:
                     pass
 
 _connection_pool = ConnectionPool()
+
+
+class PooledConnectionProxy:
+    """Proxy de conexión que retorna al pool en close().
+
+    Esto permite reusar conexiones (especialmente en SQLiteCloud) sin cambiar el código
+    existente que hace conn = get_db_connection(); ...; conn.close().
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._returned = False
+
+    def close(self):
+        if self._conn is None or self._returned:
+            return
+        try:
+            return_pooled_connection(self._conn)
+        finally:
+            self._returned = True
+            self._conn = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+
+    def execute(self, *args, **kwargs):
+        return self._conn.execute(*args, **kwargs)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 def clear_cache():
     """Limpia el cache de consultas"""
@@ -133,10 +176,18 @@ def reset_cache_stats():
         _db_cache.hit_count = 0
         _db_cache.miss_count = 0
 
-def get_db_connection():
-    """Obtiene una conexión a la base de datos según el entorno"""
+def get_raw_db_connection():
+    """Obtiene una conexión *real* a la base de datos según el entorno."""
     config = get_db_config()
     return config.get_db_connection()
+
+
+def get_db_connection():
+    """Obtiene una conexión a la BD reutilizable.
+
+    Importante: conn.close() NO cierra la conexión física; la retorna al pool.
+    """
+    return PooledConnectionProxy(get_pooled_connection())
 
 def get_pooled_connection():
     """Obtiene una conexión del pool"""

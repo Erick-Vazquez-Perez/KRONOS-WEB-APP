@@ -48,8 +48,10 @@ def main():
             st.info(f"**Entorno de Desarrollo** - Usuario: {current_user['name']}")
         config.show_environment_info()
     
-    # Inicializar base de datos
-    init_database()
+    # Inicializar base de datos (solo una vez por sesión para evitar lentitud en cada rerun)
+    if not st.session_state.get("_db_initialized", False):
+        init_database()
+        st.session_state["_db_initialized"] = True
     
     # Inicializar estados de sesión
     initialize_session_state()
