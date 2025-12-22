@@ -639,6 +639,120 @@ def get_custom_css():
     [data-testid="imageFullScreenOverlay"] {
         display: none !important;
     }
+
+    /* ========== LOADER PERSONALIZADO WERFEN ========== */
+    /* Personalizar el contenedor del status widget en posición nativa */
+    div[data-testid="stStatusWidget"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+
+    /* Ocultar el contenido interno original */
+    div[data-testid="stStatusWidget"] > div:first-child {
+        display: none !important;
+    }
+
+    /* Agregar el spinner personalizado */
+    div[data-testid="stStatusWidget"]::before {
+        content: '' !important;
+        display: block !important;
+        width: 40px !important;
+        height: 40px !important;
+        border: 4px solid rgba(6, 3, 141, 0.1) !important;
+        border-top: 4px solid #06038D !important;
+        border-right: 4px solid #E87721 !important;
+        border-radius: 50% !important;
+        animation: werfen-spin 1s linear infinite !important;
+    }
+
+    /* Ocultar el texto de carga */
+    div[data-testid="stStatusWidget"]::after {
+        display: none !important;
+    }
+
+    @keyframes werfen-spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Loader alternativo con múltiples círculos */
+    .werfen-loader {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        padding: 2rem;
+    }
+
+    .werfen-loader-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        animation: werfen-bounce 1.4s ease-in-out infinite;
+    }
+
+    .werfen-loader-dot:nth-child(1) {
+        background: #06038D;
+        animation-delay: -0.32s;
+    }
+
+    .werfen-loader-dot:nth-child(2) {
+        background: #1a17a3;
+        animation-delay: -0.16s;
+    }
+
+    .werfen-loader-dot:nth-child(3) {
+        background: #E87721;
+        animation-delay: 0s;
+    }
+
+    @keyframes werfen-bounce {
+        0%, 80%, 100% {
+            transform: scale(0);
+            opacity: 0.5;
+        }
+        40% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    /* Spinner durante rerun de Streamlit */
+    .stSpinner > div {
+        border-top-color: #06038D !important;
+        border-right-color: #E87721 !important;
+    }
+
+    /* Overlay de carga */
+    div[data-testid="stApp"]::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(5px);
+        z-index: 9999;
+        display: none;
+        justify-content: center;
+        align-items: center;
+    }
+
+    /* Barra de progreso personalizada */
+    .stProgress > div > div > div {
+        background: linear-gradient(90deg, #06038D 0%, #E87721 100%) !important;
+    }
+
+    .stProgress > div > div {
+        background-color: rgba(6, 3, 141, 0.1) !important;
+    }
     </style>
     
     <script>
