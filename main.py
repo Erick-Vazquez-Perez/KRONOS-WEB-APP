@@ -36,9 +36,6 @@ def main():
     # SISTEMA DE AUTENTICACIÓN - Requerir login
     require_auth()
     
-    # Mostrar header personalizado de Werfen
-    st.markdown(get_werfen_header(), unsafe_allow_html=True)
-    
     # NO mostrar información del usuario aquí - se mostrará al final
     
     # Obtener configuración de entorno y usuario actual
@@ -62,6 +59,7 @@ def main():
     st.sidebar.markdown("""
     <div style="text-align: center; margin-bottom: 20px;">
         <img src="data:image/png;base64,{}" width="200" style="max-width: 100%;">
+        <h3 style="color: #06038D; font-size: 1.2rem; font-weight: 600; margin-top: 10px; margin-bottom: 0;">Green Logistics</h3>
     </div>
     """.format(get_logo_base64()), unsafe_allow_html=True)
     st.sidebar.markdown("---")  # Línea separadora
@@ -85,14 +83,9 @@ def main():
         key="page_selector"
     )
     
-    st.sidebar.markdown("---")  # Línea separadora
     
     # Mostrar estado del sistema
     show_system_health()
-    
-    # Información sobre funciones futuras
-    st.sidebar.markdown("### Próximamente")
-    st.sidebar.info("Integración de Power Automate")
     
     # Mostrar información del usuario al final de la sidebar
     auth_system.show_user_info_bottom()

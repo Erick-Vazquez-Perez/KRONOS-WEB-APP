@@ -20,6 +20,16 @@ def get_custom_css():
         --werfen-white: #ffffff;
     }
 
+    /* ========== OCULTAR ELEMENTOS DEL HEADER DE STREAMLIT ========== */
+    /* Ocultar botones de Deploy y menú de opciones, pero mantener el botón de sidebar */
+    header[data-testid="stHeader"] button[kind="header"] {
+        display: none !important;
+    }
+    
+    header[data-testid="stHeader"] > div > div:nth-child(2) {
+        display: none !important;
+    }
+
     /* ========== ESTILOS BÁSICOS DE BOTONES ========== */
     /* Botones básicos con colores Werfen - Especificidad alta */
     .stApp .stButton > button,

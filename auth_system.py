@@ -220,19 +220,8 @@ class AuthSystem:
                 Green Logistics
             </h1>
             <p style="text-align: center; color: #6c757d; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                Sistema de Gestión
+                Sistema de calendarización
             </p>
-            """, unsafe_allow_html=True)
-            
-            # Contenedor con borde para el formulario
-            st.markdown("""
-            <div style="
-                background: #f8f9fa; 
-                border: 2px solid #e9ecef; 
-                border-radius: 10px; 
-                padding: 1.5rem; 
-                margin: 1rem 0;
-            ">
             """, unsafe_allow_html=True)
             
             # Formulario
@@ -250,34 +239,6 @@ class AuthSystem:
                             st.error("Usuario o contraseña incorrectos")
                     else:
                         st.warning("Complete todos los campos")
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            # Información de credenciales
-            st.markdown("""
-            <div style="
-                background: #f8f9fa; 
-                border-radius: 8px; 
-                padding: 1rem; 
-                margin-top: 1rem; 
-                border-left: 3px solid #007bff;
-            ">
-                <h5 style="font-size: 0.85rem; color: #495057; margin-bottom: 0.5rem;">Acceso de Prueba</h5>
-                <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
-                    gladmin / GLAdmin2024!
-                </div>
-                <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
-                    glmxuser / GLMXUser2024!
-                </div>
-                <div style="font-size: 0.75rem; font-family: monospace; background: white; padding: 0.3rem 0.5rem; margin: 0.2rem 0; border-radius: 4px; color: #495057;">
-                    glcouser / GLCOUser2024!
-                </div>
-                <div style="font-size: 0.7rem; color: #6c757d; margin-top: 0.5rem;">
-                    GLMXUser: Solo visualización de clientes de México<br>
-                    GLCOUser: Solo visualización de clientes de Colombia
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
     
     def show_user_info(self, at_bottom=False):
         """Muestra información del usuario en la sidebar"""
