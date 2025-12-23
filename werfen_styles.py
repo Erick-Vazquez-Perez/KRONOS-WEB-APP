@@ -884,6 +884,7 @@ def get_client_card_html(client):
         <p><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
         <p><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
         <p><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
+        <p><strong>Calendario SAP:</strong> {(client.get('calendario_sap') or '').strip() or 'N/A'}</p>
         <p><strong>Tipo:</strong> {client.get('tipo_cliente', 'N/A') or 'N/A'}</p>
         <p><strong>Región:</strong> {client.get('region', 'N/A') or 'N/A'}</p>
     </div>
