@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import sqlite3
 import pandas as pd
+import calendar
 from datetime import datetime, timedelta
 from auth_system import auth_system, require_permission, is_read_only_mode, get_user_country_filter, has_country_filter
 from database import (
@@ -582,13 +583,18 @@ def show_client_detail():
     with col1:
         # Configurar opciones de vista según el modo
         if is_read_only_mode():
-            view_options = ["Vista por Mes", "Año Completo"]
+            view_options = ["Calendario", "Vista por Mes"]
         else:
-            view_options = ["Vista por Mes", "Edición por Año", "Año Completo"]
+            view_options = ["Calendario", "Vista por Mes", "Edición por Año"]
+
+        # Predeterminar vista "Calendario"
+        default_view = "Calendario"
+        default_view_index = view_options.index(default_view) if default_view in view_options else 0
         
         view_type = st.selectbox(
             "Vista del calendario:",
             view_options,
+            index=default_view_index,
             help="Selecciona cómo quieres ver el calendario",
             key=f"view_type_{client_id}"
         )
@@ -622,7 +628,7 @@ def show_client_detail():
         )
     
     with col3:
-        if view_type == "Vista por Mes":
+        if view_type in ("Vista por Mes", "Calendario"):
             # Selector de mes para vista mensual
             months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -641,11 +647,11 @@ def show_client_detail():
         # Información adicional según la vista
         if view_type == "Vista por Mes":
             st.write("*Vista mensual*")
+        elif view_type == "Calendario":
+            st.write("*Vista calendario*")
         elif view_type == "Edición por Año":
             if not is_read_only_mode():
                 st.write("*Vista editable*")
-        elif view_type == "Año Completo":
-            st.write("*Vista completa*")
     
     with col5:
         if not is_read_only_mode():
@@ -673,30 +679,12 @@ def show_client_detail():
     try:
         if view_type == "Vista por Mes":
             show_monthly_readonly_calendar(client_id, selected_month, selected_year)
+
+        elif view_type == "Calendario":
+            show_monthly_calendar_component(client_id, selected_month, selected_year)
         
         elif view_type == "Edición por Año":
             show_editable_full_year_calendar(client_id, selected_year)
-        
-        elif view_type == "Año Completo":
-            calendar_df = create_client_calendar_table_by_year(client_id, selected_year)
-            if not calendar_df.empty:
-                st.dataframe(calendar_df, use_container_width=True, hide_index=True)
-                
-                # Mostrar resumen del año seleccionado
-                try:
-                    year_summary = get_client_year_summary_by_year(client_id, selected_year)
-                    if year_summary:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Fechas del Año", year_summary.get('total_fechas', 0))
-                        with col2:
-                            st.metric("Actividades", year_summary.get('actividades', 0))
-                        with col3:
-                            st.metric("Meses con Actividad", year_summary.get('meses_con_actividad', 0))
-                except Exception as e:
-                    st.write(f"Error obteniendo resumen del año: {e}")
-            else:
-                st.info(f"No hay fechas calculadas para el año {selected_year}.")
                 
     except Exception as e:
         st.error(f"Error al mostrar el calendario: {e}")
@@ -1102,6 +1090,185 @@ def show_monthly_readonly_calendar(client_id, selected_month, year=None):
         )
     else:
         st.info("No hay fechas para mostrar en formato de tabla.")
+
+
+def show_monthly_calendar_component(client_id, selected_month, year=None):
+    """Muestra un calendario mensual tipo grilla para visualizar actividades con colores por actividad."""
+    dates_df = get_calculated_dates(client_id)
+
+    if dates_df.empty:
+        st.info("No hay fechas calculadas.")
+        return
+
+    # Año requerido para renderizar calendario; si no viene, usar actual
+    if not year:
+        year = datetime.now().year
+
+    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    if selected_month not in months:
+        st.error("Mes inválido")
+        return
+
+    month_num = months.index(selected_month) + 1
+
+    # Filtrar por año/mes
+    try:
+        df = dates_df.copy()
+        df['date_obj'] = pd.to_datetime(df['date'], errors='coerce')
+        df = df.dropna(subset=['date_obj'])
+        df = df[(df['date_obj'].dt.year == year) & (df['date_obj'].dt.month == month_num)]
+    except Exception:
+        st.error("No se pudieron procesar las fechas del calendario.")
+        return
+
+    if df.empty:
+        st.info(f"No hay actividades programadas para {selected_month} {year}.")
+        return
+
+    # Mapa día -> {actividad: conteo}
+    day_events: dict[int, dict[str, int]] = {}
+    for _, row in df.iterrows():
+        day = int(row['date_obj'].day)
+        activity = str(row.get('activity_name', '')).strip() or "(Sin nombre)"
+        day_events.setdefault(day, {})
+        day_events[day][activity] = day_events[day].get(activity, 0) + 1
+
+    # Ordenar por día respetando orden base; mantener repetición como contador
+    base_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
+    day_events_ordered: dict[int, list[tuple[str, int]]] = {}
+    for day, counts in day_events.items():
+        ordered_names = [a for a in base_order if a in counts] + [a for a in counts.keys() if a not in base_order]
+        day_events_ordered[day] = [(name, counts[name]) for name in ordered_names]
+
+    def activity_style(activity_name: str):
+        # Colores solicitados
+        if activity_name == 'Fecha Envío OC':
+            return {"bg": "var(--werfen-blue)", "fg": "#ffffff", "label": "Fecha Envío OC"}
+        if activity_name == 'Albaranado':
+            return {"bg": "var(--werfen-orange)", "fg": "#ffffff", "label": "Albaranado"}
+        if activity_name == 'Fecha Entrega':
+            return {"bg": "#FFB653", "fg": "#1a1a1a", "label": "Fecha Entrega"}
+        # Actividades extra
+        return {"bg": "#2E7D32", "fg": "#ffffff", "label": activity_name}
+
+    # Leyenda
+    legend_items = [
+        ("Fecha Envío OC", "var(--werfen-blue)", "#ffffff"),
+        ("Albaranado", "var(--werfen-orange)", "#ffffff"),
+        ("Fecha Entrega", "#FFB653", "#1a1a1a"),
+        ("Extra", "#2E7D32", "#ffffff"),
+    ]
+
+    legend_html = "".join(
+        f"<span class='gl-legend-item'><span class='gl-legend-dot' style='background:{bg};'></span>{label}</span>"
+        for label, bg, _fg in legend_items
+    )
+
+    # Construir calendario
+    cal = calendar.Calendar(firstweekday=0)  # 0 = lunes
+    weeks = cal.monthdayscalendar(year, month_num)
+    weekday_labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+    header_cells = "".join(f"<div class='gl-weekday'>{w}</div>" for w in weekday_labels)
+    weeks_html = ""
+
+    for week in weeks:
+        days_html = ""
+        for day in week:
+            if day == 0:
+                days_html += "<div class='gl-day gl-day-empty'></div>"
+                continue
+
+            badges = ""
+            for act, count in day_events_ordered.get(day, []):
+                style = activity_style(act)
+                label = style["label"]
+                label_text = f"{label} ({count})" if count > 1 else label
+                title_text = f"{act} (x{count})" if count > 1 else act
+                badges += (
+                    "<div class='gl-badge' "
+                    f"style='background:{style['bg']};color:{style['fg']};' "
+                    f"title='{title_text}'>"
+                    f"{label_text}"
+                    "</div>"
+                )
+
+            days_html += (
+                "<div class='gl-day'>"
+                f"<div class='gl-day-num'>{day}</div>"
+                f"<div class='gl-badges'>{badges}</div>"
+                "</div>"
+            )
+
+        weeks_html += f"<div class='gl-week'>{days_html}</div>"
+
+    html = f"""
+    <style>
+      .gl-cal-wrap {{
+        border: 2px solid var(--werfen-gray-dark);
+        border-radius: 12px;
+        padding: 12px;
+        background: linear-gradient(135deg, var(--werfen-white) 0%, var(--werfen-gray) 100%);
+      }}
+      .gl-cal-title {{
+        display:flex; align-items:center; justify-content:space-between;
+        gap: 12px; margin-bottom: 10px;
+      }}
+      .gl-cal-title h4 {{ margin: 0; color: var(--werfen-blue); }}
+      .gl-legend {{ display:flex; gap: 12px; flex-wrap: wrap; }}
+      .gl-legend-item {{ font-size: 12px; color: #333; display:flex; align-items:center; gap: 6px; }}
+      .gl-legend-dot {{ width: 10px; height: 10px; border-radius: 999px; display:inline-block; }}
+
+      .gl-weekdays {{
+        display:grid; grid-template-columns: repeat(7, 1fr);
+        gap: 8px; margin-bottom: 8px;
+      }}
+      .gl-weekday {{
+        font-weight: 700; font-size: 12px; color: var(--werfen-blue);
+        text-align:center; padding: 6px 0;
+      }}
+      .gl-week {{
+        display:grid; grid-template-columns: repeat(7, 1fr);
+        gap: 8px; margin-bottom: 8px;
+      }}
+      .gl-day {{
+        min-height: 86px;
+        border: 1px solid var(--werfen-gray-dark);
+        border-radius: 10px;
+        background: var(--werfen-white);
+        padding: 8px;
+        overflow: hidden;
+      }}
+      .gl-day-empty {{ background: transparent; border: none; }}
+      .gl-day-num {{
+        font-weight: 800; color: #333; font-size: 13px;
+        line-height: 1; margin-bottom: 6px;
+      }}
+      .gl-badges {{ display:flex; flex-direction:column; gap: 6px; }}
+      .gl-badge {{
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.1;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }}
+    </style>
+
+    <div class='gl-cal-wrap'>
+      <div class='gl-cal-title'>
+        <h4>Calendario de {selected_month} {year}</h4>
+        <div class='gl-legend'>{legend_html}</div>
+      </div>
+      <div class='gl-weekdays'>{header_cells}</div>
+      {weeks_html}
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
 
 # ========== FUNCIONES DE EDICIÓN DE FECHAS ==========
 
