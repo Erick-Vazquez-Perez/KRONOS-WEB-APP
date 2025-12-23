@@ -183,53 +183,196 @@ class AuthSystem:
                 return ""
         
         logo_base64 = get_logo_base64()
-        
-        # CSS para login compacto
-        st.markdown("""
-        <style>
-        .main .block-container {
-            padding: 1rem !important;
-            max-width: 100% !important;
-        }
-        
-        header[data-testid="stHeader"] {
-            display: none !important;
-        }
-        
-        footer {
-            display: none !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Crear un diseño centrado usando columnas
-        col1, col2, col3 = st.columns([1, 2, 1])
-        
+
+        # Estilos específicos para una pantalla de login moderna.
+        # Nota: La app ya carga get_custom_css() (werfen_styles) antes de require_auth(),
+        # así que aquí reutilizamos las variables CSS corporativas (sin hardcodear paleta).
+        st.markdown(
+            """
+            <style>
+            /* ===== Login: layout de pantalla completa ===== */
+            header[data-testid="stHeader"],
+            footer {
+                display: none !important;
+            }
+
+            .main .block-container {
+                padding-top: 2.25rem !important;
+                padding-bottom: 2.25rem !important;
+                max-width: 1100px !important;
+            }
+
+            /* ===== Animaciones de entrada (aparición suave) ===== */
+            @keyframes gl-fade-in {
+                0% {
+                    opacity: 0;
+                    transform: translateY(14px);
+                    filter: blur(2px);
+                }
+                100% {
+                    opacity: 1;
+                    transform: translateY(0);
+                    filter: blur(0);
+                }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                div[data-testid="stForm"],
+                div[data-testid="stForm"] * {
+                    animation: none !important;
+                    transition: none !important;
+                }
+            }
+
+                /* Fondo con degradado Werfen (azul → naranja) */
+            div[data-testid="stAppViewContainer"] {
+                background:
+                    radial-gradient(1200px 700px at 15% 15%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 60%),
+                    radial-gradient(1200px 700px at 85% 25%, rgba(6, 3, 141, 0.18), rgba(6, 3, 141, 0) 55%),
+                    linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 45%, var(--werfen-orange) 115%) !important;
+            }
+
+            /* ===== Card (el form) ===== */
+            div[data-testid="stForm"] {
+                background: var(--werfen-gray) !important;
+                border: 1px solid var(--werfen-gray-dark) !important;
+                border-radius: 18px !important;
+                padding: 1.25rem 1.25rem 1rem 1.25rem !important;
+                box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14) !important;
+                position: relative;
+                overflow: hidden;
+                animation: gl-fade-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+            }
+
+            /* Sin banda superior (modal/card uniforme) */
+            div[data-testid="stForm"]::before {
+                content: none;
+            }
+
+            /* Ajuste de inputs para look moderno */
+            div[data-testid="stForm"] .stTextInput > div > div > input {
+                border-radius: 12px !important;
+                border: 2px solid rgba(6, 3, 141, 0.16) !important;
+                padding: 0.7rem 0.9rem !important;
+                font-size: 14px !important;
+                background: rgba(255, 255, 255, 0.95) !important;
+            }
+
+            div[data-testid="stForm"] .stTextInput > div > div > input:focus {
+                border-color: var(--werfen-blue) !important;
+                box-shadow: 0 0 0 3px rgba(6, 3, 141, 0.12) !important;
+            }
+
+            /* Botón primario con degradado Werfen (solo en login) */
+            div[data-testid="stForm"] .stButton > button[kind="primary"],
+            div[data-testid="stForm"] .stButton > button[data-testid="baseButton-primary"] {
+                background: linear-gradient(90deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 55%, var(--werfen-orange) 135%) !important;
+                border-color: transparent !important;
+                color: white !important;
+                border-radius: 12px !important;
+                min-height: 46px !important;
+                box-shadow: 0 10px 20px rgba(6, 3, 141, 0.18) !important;
+            }
+
+            div[data-testid="stForm"] .stButton > button[kind="primary"]:hover,
+            div[data-testid="stForm"] .stButton > button[data-testid="baseButton-primary"]:hover {
+                filter: brightness(1.02);
+                transform: translateY(-1px);
+                box-shadow: 0 14px 26px rgba(6, 3, 141, 0.22) !important;
+            }
+
+            /* Tipografía/espaciado del header interno */
+            .gl-login-title {
+                text-align: center;
+                margin: 0.25rem 0 0.15rem 0;
+                font-weight: 800;
+                letter-spacing: 0.2px;
+                color: var(--werfen-blue);
+                font-size: 1.55rem;
+                animation: gl-fade-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 120ms;
+            }
+
+            .gl-login-subtitle {
+                text-align: center;
+                margin: 0 0 1.1rem 0;
+                color: rgba(0, 0, 0, 0.62);
+                font-size: 0.95rem;
+                animation: gl-fade-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 170ms;
+            }
+
+            .gl-login-logo {
+                display: block;
+                margin: 0.9rem auto 0.4rem auto;
+                max-width: 10px;
+                width: 50%;
+                height: auto;
+                animation: gl-fade-in 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 60ms;
+            }
+
+            /* Labels/inputs/botón con entrada escalonada */
+            div[data-testid="stForm"] label {
+                animation: gl-fade-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 220ms;
+            }
+
+            div[data-testid="stForm"] .stTextInput {
+                animation: gl-fade-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 260ms;
+            }
+
+            div[data-testid="stForm"] .stButton {
+                animation: gl-fade-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 320ms;
+            }
+
+            /* Mensajes dentro del card (más compactos) */
+            div[data-testid="stForm"] div[data-testid="stAlert"] {
+                margin-top: 0.6rem !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Disposición centrada y orgánica (card + fondo)
+        col1, col2, col3 = st.columns([1.2, 1, 1.2])
+
         with col2:
-            # Logo
-            if logo_base64:
-                st.markdown(f"""
-                <div style="text-align: center; margin-bottom: 1rem;">
-                    <img src="data:image/png;base64,{logo_base64}" width="150" style="max-width: 100%;">
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Título
-            st.markdown("""
-            <h1 style="text-align: center; color: #2c3e50; font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0;">
-                Green Logistics
-            </h1>
-            <p style="text-align: center; color: #6c757d; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                Sistema de calendarización
-            </p>
-            """, unsafe_allow_html=True)
-            
-            # Formulario
             with st.form("login_form", clear_on_submit=False):
-                username = st.text_input("", placeholder="Usuario", label_visibility="collapsed", key="username_input")
-                password = st.text_input("", type="password", placeholder="Contraseña", label_visibility="collapsed", key="password_input")
+                if logo_base64:
+                    st.markdown(
+                        f'<img class="gl-login-logo" src="data:image/png;base64,{logo_base64}" alt="Werfen" />',
+                        unsafe_allow_html=True,
+                    )
+
+                st.markdown(
+                    '<h1 class="gl-login-title">Green Logistics</h1>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<p class="gl-login-subtitle">Sistema de calendarización</p>',
+                    unsafe_allow_html=True,
+                )
+
+                username = st.text_input(
+                    "Usuario",
+                    placeholder="Ingresa tu usuario",
+                    label_visibility="visible",
+                    key="username_input",
+                )
+                password = st.text_input(
+                    "Contraseña",
+                    type="password",
+                    placeholder="Ingresa tu contraseña",
+                    label_visibility="visible",
+                    key="password_input",
+                )
+
                 submitted = st.form_submit_button("Acceder", type="primary", use_container_width=True)
-                
+
                 if submitted:
                     if username and password:
                         if self.login(username, password):
