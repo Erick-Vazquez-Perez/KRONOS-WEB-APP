@@ -91,11 +91,40 @@ class ConnectionPool:
         self._connections = []
         self._max_connections = max_connections
         self._lock = threading.RLock()
+
+    def _is_connection_usable(self, conn) -> bool:
+        """Verifica si una conexión sigue viva.
+
+        SQLiteCloud puede cerrar sockets inactivos; esto evita reutilizar
+        conexiones muertas del pool.
+        """
+        if conn is None:
+            return False
+        try:
+            # DB-API: Connection.execute existe en sqlite3 y sqlitecloud.
+            cur = conn.execute("SELECT 1")
+            try:
+                cur.fetchone()
+            except Exception:
+                # Algunos drivers pueden no soportar fetchone aquí; si llegó hasta
+                # execute, lo consideramos usable.
+                pass
+            return True
+        except Exception:
+            return False
     
     def get_connection(self):
         with self._lock:
-            if self._connections:
-                return self._connections.pop()
+            while self._connections:
+                conn = self._connections.pop()
+                if self._is_connection_usable(conn):
+                    return conn
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+            # No hay conexiones o todas estaban muertas
             return get_raw_db_connection()
     
     def return_connection(self, conn):
