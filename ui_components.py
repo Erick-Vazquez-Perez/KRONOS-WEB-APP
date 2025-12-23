@@ -269,8 +269,8 @@ def show_clients_gallery():
     
     clients_to_show = filtered_clients
     
-    # Selector de vista
-    col1, col2 = st.columns([1, 3])
+    # Selector de vista + año (para preview)
+    col1, col2, _spacer = st.columns([1, 1, 2])
     with col1:
         view_mode = st.selectbox(
             "Vista:",
@@ -278,23 +278,33 @@ def show_clients_gallery():
             key="view_mode",
             help="Selecciona cómo mostrar los clientes"
         )
+    with col2:
+        current_year = datetime.now().year
+        year_options = list(range(current_year - 2, current_year + 6))
+        preview_year = st.selectbox(
+            "Año:",
+            year_options,
+            index=year_options.index(current_year),
+            key="preview_year",
+            help="Año usado para el preview de fechas por cliente"
+        )
     
     # Mostrar nombre del mes actual debajo del selector de vista
     months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
     current_month_name = months[datetime.now().month - 1]
-    st.markdown(f"#### Mostrando fechas de {current_month_name} {datetime.now().year}")
+    st.markdown(f"#### Mostrando fechas de {current_month_name} {preview_year}")
     
     st.divider()
 
     # Mostrar clientes según la vista seleccionada
     if view_mode == "Lista":
-        show_clients_list_view(clients_to_show)
+        show_clients_list_view(clients_to_show, preview_year)
     else:
-        show_clients_gallery_view(clients_to_show)
+        show_clients_gallery_view(clients_to_show, preview_year)
 
-def get_client_current_month_data(client_id):
-    """Obtiene los datos del mes actual para un cliente específico (vista compacta)"""
+def get_client_current_month_data(client_id, year):
+    """Obtiene los datos del mes actual y año seleccionado para un cliente específico (vista compacta)"""
     dates_df = get_calculated_dates(client_id)
     
     if dates_df.empty:
@@ -308,7 +318,7 @@ def get_client_current_month_data(client_id):
     for _, row in dates_df.iterrows():
         try:
             date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
-            if date_obj.month == current_month:
+            if date_obj.month == current_month and date_obj.year == year:
                 # Mapear meses al español para formato abreviado
                 months_spanish = {
                     1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
@@ -366,7 +376,7 @@ def get_client_current_month_data(client_id):
     else:
         return None
 
-def show_clients_gallery_view(clients_to_show):
+def show_clients_gallery_view(clients_to_show, preview_year):
     """Muestra los clientes en vista de galería (tarjetas)"""
     
     # Crear contenedor scrolleable con altura fija
@@ -382,7 +392,7 @@ def show_clients_gallery_view(clients_to_show):
                     
                     # Mostrar vista del mes actual (datos solamente, sin título del mes)
                     try:
-                        current_month_df = get_client_current_month_data(client['id'])
+                        current_month_df = get_client_current_month_data(client['id'], preview_year)
                         if current_month_df is not None and not current_month_df.empty:
                             # Calcular altura dinámica basada en número de filas
                             num_rows = len(current_month_df)
@@ -418,7 +428,7 @@ def show_clients_gallery_view(clients_to_show):
                         st.session_state.show_client_detail = True
                         st.rerun()
 
-def show_clients_list_view(clients_to_show):
+def show_clients_list_view(clients_to_show, preview_year):
     """Muestra los clientes en vista de lista (tabla)"""
     if clients_to_show.empty:
         st.info("No hay clientes para mostrar")
