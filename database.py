@@ -261,6 +261,9 @@ def create_database_indexes():
     cursor = conn.cursor()
     
     indexes = [
+        # Índices para catálogo de actividades
+        "CREATE INDEX IF NOT EXISTS idx_activities_catalog_name ON activities_catalog(name)",
+
         # Índices para la tabla clients
         "CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)",
         "CREATE INDEX IF NOT EXISTS idx_clients_codigo_ag ON clients(codigo_ag)",
@@ -270,12 +273,14 @@ def create_database_indexes():
         # Índices para la tabla client_activities
         "CREATE INDEX IF NOT EXISTS idx_client_activities_client_id ON client_activities(client_id)",
         "CREATE INDEX IF NOT EXISTS idx_client_activities_activity_name ON client_activities(activity_name)",
+        "CREATE INDEX IF NOT EXISTS idx_client_activities_activity_id ON client_activities(activity_id)",
         "CREATE INDEX IF NOT EXISTS idx_client_activities_frequency_id ON client_activities(frequency_template_id)",
         "CREATE INDEX IF NOT EXISTS idx_client_activities_composite ON client_activities(client_id, activity_name)",
         
         # Índices para la tabla calculated_dates
         "CREATE INDEX IF NOT EXISTS idx_calculated_dates_client_id ON calculated_dates(client_id)",
         "CREATE INDEX IF NOT EXISTS idx_calculated_dates_activity ON calculated_dates(activity_name)",
+        "CREATE INDEX IF NOT EXISTS idx_calculated_dates_activity_id ON calculated_dates(activity_id)",
         "CREATE INDEX IF NOT EXISTS idx_calculated_dates_date ON calculated_dates(date)",
         "CREATE INDEX IF NOT EXISTS idx_calculated_dates_composite ON calculated_dates(client_id, activity_name, date_position)",
         
@@ -458,6 +463,26 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Catálogo de actividades (normalización)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS activities_catalog (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER DEFAULT 1
+        )
+    ''')
+
+    # Actividades base con IDs fijos
+    cursor.execute(
+        "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (1, 'Fecha Envío OC', 1)"
+    )
+    cursor.execute(
+        "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (2, 'Albaranado', 1)"
+    )
+    cursor.execute(
+        "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (3, 'Fecha Entrega', 1)"
+    )
     
     # Verificar si los campos tipo_cliente y region existen, si no, agregarlos
     cursor.execute("PRAGMA table_info(clients)")
@@ -504,6 +529,14 @@ def init_database():
             FOREIGN KEY (frequency_template_id) REFERENCES frequency_templates (id)
         )
     ''')
+
+    # Asegurar columna activity_id en client_activities (migración no destructiva)
+    cursor.execute("PRAGMA table_info(client_activities)")
+    ca_columns_info = cursor.fetchall()
+    ca_column_names = [col[1] for col in ca_columns_info]
+    if 'activity_id' not in ca_column_names:
+        cursor.execute('ALTER TABLE client_activities ADD COLUMN activity_id INTEGER')
+        print("Campo activity_id agregado a client_activities")
     
     # Verificar si la tabla calculated_dates existe y su estructura
     cursor.execute("PRAGMA table_info(calculated_dates)")
@@ -526,6 +559,7 @@ def init_database():
             CREATE TABLE calculated_dates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 client_id INTEGER,
+                activity_id INTEGER,
                 activity_name TEXT NOT NULL,
                 date_position INTEGER NOT NULL DEFAULT 1,
                 date DATE NOT NULL,
@@ -544,6 +578,19 @@ def init_database():
                         client_id = row[1]
                         activity_name = row[2]
                         date = row[3]
+
+                        # Asegurar actividad en catálogo y obtener ID
+                        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+                        activity_row = cursor.fetchone()
+                        if activity_row:
+                            activity_id = activity_row[0]
+                        else:
+                            cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+                            activity_id = cursor.fetchone()[0]
+                            cursor.execute(
+                                "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                                (activity_id, activity_name)
+                            )
                         
                         key = f"{client_id}_{activity_name}"
                         if key not in activity_counters:
@@ -553,12 +600,70 @@ def init_database():
                         
                         if activity_counters[key] <= 4:
                             cursor.execute('''
-                                INSERT INTO calculated_dates (client_id, activity_name, date_position, date, is_custom)
-                                VALUES (?, ?, ?, ?, 0)
-                            ''', (client_id, activity_name, activity_counters[key], date))
+                                INSERT INTO calculated_dates (client_id, activity_id, activity_name, date_position, date, is_custom)
+                                VALUES (?, ?, ?, ?, ?, 0)
+                            ''', (client_id, activity_id, activity_name, activity_counters[key], date))
                 except Exception as e:
                     print(f"Error restaurando datos: {e}")
                     continue
+
+    # Asegurar columna activity_id en calculated_dates (migración no destructiva)
+    cursor.execute("PRAGMA table_info(calculated_dates)")
+    cd_columns_info = cursor.fetchall()
+    cd_column_names = [col[1] for col in cd_columns_info]
+    if 'activity_id' not in cd_column_names:
+        cursor.execute('ALTER TABLE calculated_dates ADD COLUMN activity_id INTEGER')
+        print("Campo activity_id agregado a calculated_dates")
+
+    # Backfill/migración: asegurar que todas las actividades existan en catálogo y poblar activity_id
+    try:
+        # 1) Actividades en client_activities
+        cursor.execute("SELECT DISTINCT activity_name FROM client_activities WHERE activity_name IS NOT NULL")
+        for (activity_name,) in cursor.fetchall():
+            activity_name = str(activity_name).strip()
+            if not activity_name:
+                continue
+            cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+            row = cursor.fetchone()
+            if row:
+                activity_id = row[0]
+            else:
+                cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+                activity_id = cursor.fetchone()[0]
+                cursor.execute(
+                    "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                    (activity_id, activity_name)
+                )
+
+            cursor.execute(
+                "UPDATE client_activities SET activity_id = ? WHERE (activity_id IS NULL OR activity_id = 0) AND activity_name = ?",
+                (activity_id, activity_name)
+            )
+
+        # 2) Actividades en calculated_dates
+        cursor.execute("SELECT DISTINCT activity_name FROM calculated_dates WHERE activity_name IS NOT NULL")
+        for (activity_name,) in cursor.fetchall():
+            activity_name = str(activity_name).strip()
+            if not activity_name:
+                continue
+            cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+            row = cursor.fetchone()
+            if row:
+                activity_id = row[0]
+            else:
+                cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+                activity_id = cursor.fetchone()[0]
+                cursor.execute(
+                    "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                    (activity_id, activity_name)
+                )
+
+            cursor.execute(
+                "UPDATE calculated_dates SET activity_id = ? WHERE (activity_id IS NULL OR activity_id = 0) AND activity_name = ?",
+                (activity_id, activity_name)
+            )
+    except Exception as e:
+        print(f"Error migrando catálogo de actividades: {e}")
     
     conn.commit()
     
@@ -1000,17 +1105,28 @@ def get_client_activities(client_id, use_cache=True):
     
     try:
         query = '''
-            SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
+            SELECT
+                ca.id,
+                ca.client_id,
+                ca.activity_id,
+                COALESCE(ac.name, ca.activity_name) as activity_name,
+                ca.frequency_template_id,
+                ft.name as frequency_name,
+                ft.frequency_type,
+                ft.frequency_config,
+                ft.calendario_sap_code
             FROM client_activities ca
             JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
+            LEFT JOIN activities_catalog ac ON ac.id = ca.activity_id
             WHERE ca.client_id = ?
-            ORDER BY 
-                CASE ca.activity_name
-                    WHEN 'Fecha Envío OC' THEN 1
-                    WHEN 'Albaranado' THEN 2
-                    WHEN 'Fecha Entrega' THEN 3
+            ORDER BY
+                CASE COALESCE(ca.activity_id, 999999)
+                    WHEN 1 THEN 1
+                    WHEN 2 THEN 2
+                    WHEN 3 THEN 3
                     ELSE 4
-                END
+                END,
+                COALESCE(ac.name, ca.activity_name)
         '''
         df = execute_query_df(query, params=(client_id,))
         
@@ -1031,17 +1147,28 @@ def get_multiple_client_activities(client_ids):
     try:
         placeholders = ','.join(['?' for _ in client_ids])
         query = f'''
-            SELECT ca.*, ft.name as frequency_name, ft.frequency_type, ft.frequency_config, ft.calendario_sap_code
+            SELECT
+                ca.id,
+                ca.client_id,
+                ca.activity_id,
+                COALESCE(ac.name, ca.activity_name) as activity_name,
+                ca.frequency_template_id,
+                ft.name as frequency_name,
+                ft.frequency_type,
+                ft.frequency_config,
+                ft.calendario_sap_code
             FROM client_activities ca
             JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
+            LEFT JOIN activities_catalog ac ON ac.id = ca.activity_id
             WHERE ca.client_id IN ({placeholders})
             ORDER BY ca.client_id,
-                CASE ca.activity_name
-                    WHEN 'Fecha Envío OC' THEN 1
-                    WHEN 'Albaranado' THEN 2
-                    WHEN 'Fecha Entrega' THEN 3
+                CASE COALESCE(ca.activity_id, 999999)
+                    WHEN 1 THEN 1
+                    WHEN 2 THEN 2
+                    WHEN 3 THEN 3
                     ELSE 4
-                END
+                END,
+                COALESCE(ac.name, ca.activity_name)
         '''
         return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=120)
     except Exception as e:
@@ -1061,13 +1188,13 @@ def create_default_activities(client_id):
     
     # Actividades predeterminadas en el orden requerido
     default_activities = [
-        ("Fecha Envío OC", 1),   # Primera actividad
-        ("Albaranado", 2),       # Segunda actividad
-        ("Fecha Entrega", 3)     # Tercera actividad
+        ("Fecha Envío OC", 1, 1),   # (nombre, activity_id, frequency_template_id)
+        ("Albaranado", 2, 2),       # (nombre, activity_id, frequency_template_id)
+        ("Fecha Entrega", 3, 3)     # (nombre, activity_id, frequency_template_id)
     ]
     
     try:
-        for activity_name, freq_id in default_activities:
+        for activity_name, activity_id, freq_id in default_activities:
             cursor.execute('''
                 SELECT COUNT(*) FROM client_activities 
                 WHERE client_id = ? AND activity_name = ?
@@ -1075,9 +1202,9 @@ def create_default_activities(client_id):
             
             if cursor.fetchone()[0] == 0:
                 cursor.execute('''
-                    INSERT INTO client_activities (client_id, activity_name, frequency_template_id)
-                    VALUES (?, ?, ?)
-                ''', (client_id, activity_name, freq_id))
+                    INSERT INTO client_activities (client_id, activity_id, activity_name, frequency_template_id)
+                    VALUES (?, ?, ?, ?)
+                ''', (client_id, activity_id, activity_name, freq_id))
                 print(f"Creada actividad: {activity_name} para cliente {client_id}")
                 
                 # Si es la actividad Albaranado, actualizar automáticamente el calendario SAP del cliente
@@ -1096,11 +1223,23 @@ def update_client_activity_frequency(client_id, activity_name, frequency_templat
     cursor = conn.cursor()
     
     try:
+        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+        row = cursor.fetchone()
+        activity_id = row[0] if row else None
+
+        if activity_id is None:
+            cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+            activity_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                (activity_id, activity_name)
+            )
+
         cursor.execute('''
             UPDATE client_activities 
-            SET frequency_template_id = ?
-            WHERE client_id = ? AND activity_name = ?
-        ''', (frequency_template_id, client_id, activity_name))
+            SET frequency_template_id = ?, activity_id = ?
+            WHERE client_id = ? AND (activity_id = ? OR activity_name = ?)
+        ''', (frequency_template_id, activity_id, client_id, activity_id, activity_name))
         
         conn.commit()
         print(f"Frecuencia actualizada para {activity_name}")
@@ -1125,10 +1264,22 @@ def add_client_activity(client_id, activity_name, frequency_template_id):
     cursor = conn.cursor()
     
     try:
+        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+        row = cursor.fetchone()
+        activity_id = row[0] if row else None
+
+        if activity_id is None:
+            cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+            activity_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                (activity_id, activity_name)
+            )
+
         cursor.execute('''
-            INSERT INTO client_activities (client_id, activity_name, frequency_template_id)
-            VALUES (?, ?, ?)
-        ''', (client_id, activity_name, frequency_template_id))
+            INSERT INTO client_activities (client_id, activity_id, activity_name, frequency_template_id)
+            VALUES (?, ?, ?, ?)
+        ''', (client_id, activity_id, activity_name, frequency_template_id))
         
         conn.commit()
         print(f"Actividad {activity_name} agregada al cliente {client_id}")
@@ -1153,20 +1304,24 @@ def delete_client_activity(client_id, activity_name):
     cursor = conn.cursor()
     
     try:
+        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+        row = cursor.fetchone()
+        activity_id = row[0] if row else None
+
         # Usar transacción para mantener consistencia
         cursor.execute("BEGIN TRANSACTION")
         
         # Eliminar actividad
         cursor.execute('''
             DELETE FROM client_activities 
-            WHERE client_id = ? AND activity_name = ?
-        ''', (client_id, activity_name))
+            WHERE client_id = ? AND (activity_id = ? OR activity_name = ?)
+        ''', (client_id, activity_id, activity_name))
         
         # Eliminar fechas asociadas
         cursor.execute('''
             DELETE FROM calculated_dates 
-            WHERE client_id = ? AND activity_name = ?
-        ''', (client_id, activity_name))
+            WHERE client_id = ? AND (activity_id = ? OR activity_name = ?)
+        ''', (client_id, activity_id, activity_name))
         
         conn.commit()
         print(f"Actividad {activity_name} eliminada del cliente {client_id}")
@@ -1199,16 +1354,25 @@ def get_calculated_dates(client_id, use_cache=True):
     conn = get_pooled_connection()
     try:
         dates = pd.read_sql_query('''
-            SELECT * FROM calculated_dates 
-            WHERE client_id = ? 
-            ORDER BY 
-                CASE activity_name
-                    WHEN 'Fecha Envío OC' THEN 1
-                    WHEN 'Albaranado' THEN 2
-                    WHEN 'Fecha Entrega' THEN 3
+            SELECT
+                cd.id,
+                cd.client_id,
+                cd.activity_id,
+                COALESCE(ac.name, cd.activity_name) as activity_name,
+                cd.date_position,
+                cd.date,
+                cd.is_custom
+            FROM calculated_dates cd
+            LEFT JOIN activities_catalog ac ON ac.id = cd.activity_id
+            WHERE cd.client_id = ?
+            ORDER BY
+                CASE COALESCE(cd.activity_id, 999999)
+                    WHEN 1 THEN 1
+                    WHEN 2 THEN 2
+                    WHEN 3 THEN 3
                     ELSE 4
-                END, 
-                date_position
+                END,
+                cd.date_position
         ''', conn, params=(client_id,))
         
         if use_cache:
@@ -1221,16 +1385,25 @@ def get_calculated_dates(client_id, use_cache=True):
         conn_retry = get_pooled_connection()
         try:
             dates = pd.read_sql_query('''
-                SELECT * FROM calculated_dates 
-                WHERE client_id = ? 
-                ORDER BY 
-                    CASE activity_name
-                        WHEN 'Fecha Envío OC' THEN 1
-                        WHEN 'Albaranado' THEN 2
-                        WHEN 'Fecha Entrega' THEN 3
+                SELECT
+                    cd.id,
+                    cd.client_id,
+                    cd.activity_id,
+                    COALESCE(ac.name, cd.activity_name) as activity_name,
+                    cd.date_position,
+                    cd.date,
+                    cd.is_custom
+                FROM calculated_dates cd
+                LEFT JOIN activities_catalog ac ON ac.id = cd.activity_id
+                WHERE cd.client_id = ?
+                ORDER BY
+                    CASE COALESCE(cd.activity_id, 999999)
+                        WHEN 1 THEN 1
+                        WHEN 2 THEN 2
+                        WHEN 3 THEN 3
                         ELSE 4
-                    END, 
-                    date_position
+                    END,
+                    cd.date_position
             ''', conn_retry, params=(client_id,))
         except:
             dates = pd.DataFrame()
@@ -1249,16 +1422,25 @@ def get_multiple_calculated_dates(client_ids):
     try:
         placeholders = ','.join(['?' for _ in client_ids])
         query = f'''
-            SELECT * FROM calculated_dates 
-            WHERE client_id IN ({placeholders})
-            ORDER BY client_id,
-                CASE activity_name
-                    WHEN 'Fecha Envío OC' THEN 1
-                    WHEN 'Albaranado' THEN 2
-                    WHEN 'Fecha Entrega' THEN 3
+            SELECT
+                cd.id,
+                cd.client_id,
+                cd.activity_id,
+                COALESCE(ac.name, cd.activity_name) as activity_name,
+                cd.date_position,
+                cd.date,
+                cd.is_custom
+            FROM calculated_dates cd
+            LEFT JOIN activities_catalog ac ON ac.id = cd.activity_id
+            WHERE cd.client_id IN ({placeholders})
+            ORDER BY cd.client_id,
+                CASE COALESCE(cd.activity_id, 999999)
+                    WHEN 1 THEN 1
+                    WHEN 2 THEN 2
+                    WHEN 3 THEN 3
                     ELSE 4
-                END, 
-                date_position
+                END,
+                cd.date_position
         '''
         return execute_query_df(query, params=client_ids, use_cache=True, cache_ttl=60)
     except Exception as e:
@@ -1275,14 +1457,26 @@ def save_calculated_dates(client_id, activity_name, dates_list):
     cursor = conn.cursor()
     
     try:
+        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+        row = cursor.fetchone()
+        activity_id = row[0] if row else None
+
+        if activity_id is None:
+            cursor.execute("SELECT COALESCE(MAX(id), 3) + 1 FROM activities_catalog")
+            activity_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT OR IGNORE INTO activities_catalog (id, name, is_active) VALUES (?, ?, 1)",
+                (activity_id, activity_name)
+            )
+
         # Usar transacción para operaciones atómicas
         cursor.execute("BEGIN TRANSACTION")
         
         # Eliminar fechas existentes para esta actividad
         cursor.execute('''
             DELETE FROM calculated_dates 
-            WHERE client_id = ? AND activity_name = ?
-        ''', (client_id, activity_name))
+            WHERE client_id = ? AND (activity_id = ? OR activity_name = ?)
+        ''', (client_id, activity_id, activity_name))
         
         # Insertar nuevas fechas en posiciones secuenciales (1, 2, 3, 4)
         for position, date in enumerate(dates_list[:4], 1):
@@ -1296,9 +1490,9 @@ def save_calculated_dates(client_id, activity_name, dates_list):
                     date_str = str(date)
                 
                 cursor.execute('''
-                    INSERT INTO calculated_dates (client_id, activity_name, date_position, date)
-                    VALUES (?, ?, ?, ?)
-                ''', (client_id, activity_name, position, date_str))
+                    INSERT INTO calculated_dates (client_id, activity_id, activity_name, date_position, date)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (client_id, activity_id, activity_name, position, date_str))
         
         conn.commit()
         print(f"Guardadas {min(len(dates_list), 4)} fechas para {activity_name} en posiciones secuenciales")
@@ -1318,11 +1512,15 @@ def update_calculated_date(client_id, activity_name, date_position, new_date):
     cursor = conn.cursor()
     
     try:
+        cursor.execute("SELECT id FROM activities_catalog WHERE name = ?", (activity_name,))
+        row = cursor.fetchone()
+        activity_id = row[0] if row else None
+
         cursor.execute('''
             UPDATE calculated_dates 
             SET date = ?, is_custom = 1
-            WHERE client_id = ? AND activity_name = ? AND date_position = ?
-        ''', (new_date, client_id, activity_name, date_position))
+            WHERE client_id = ? AND date_position = ? AND (activity_id = ? OR activity_name = ?)
+        ''', (new_date, client_id, date_position, activity_id, activity_name))
         conn.commit()
         
         # Invalidar cache de fechas para este cliente
@@ -1401,7 +1599,7 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         
         # Obtener todas las fechas del cliente origen
         cursor.execute('''
-            SELECT activity_name, date_position, date, is_custom
+            SELECT activity_id, activity_name, date_position, date, is_custom
             FROM calculated_dates 
             WHERE client_id = ?
             ORDER BY activity_name, date_position
@@ -1416,8 +1614,8 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         # Preparar datos para inserción batch
         insert_data = []
         for target_client_id in target_client_ids:
-            for activity_name, date_position, date_value, is_custom in source_dates:
-                insert_data.append((target_client_id, activity_name, date_position, date_value, is_custom))
+            for activity_id, activity_name, date_position, date_value, is_custom in source_dates:
+                insert_data.append((target_client_id, activity_id, activity_name, date_position, date_value, is_custom))
         
         # Eliminar fechas existentes de los clientes destino en una sola operación
         placeholders = ','.join(['?' for _ in target_client_ids])
@@ -1428,8 +1626,8 @@ def copy_dates_to_clients(source_client_id, target_client_ids):
         
         # Insertar nuevas fechas en batch
         cursor.executemany('''
-            INSERT INTO calculated_dates (client_id, activity_name, date_position, date, is_custom)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO calculated_dates (client_id, activity_id, activity_name, date_position, date, is_custom)
+            VALUES (?, ?, ?, ?, ?, ?)
         ''', insert_data)
         
         conn.commit()

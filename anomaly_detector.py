@@ -203,10 +203,10 @@ def get_delivery_anomalies_detailed(conn, year, month, country_filter=None):
         alb.date_position as pos_albaranado,
         ent.date_position as pos_entrega
     FROM clients c
-    JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
-    JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
+    JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_id = 2
+    JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_id = 3
                                 AND alb.date_position = ent.date_position
-    LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+    LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_id = 2
     LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
     WHERE date(alb.date) > date(ent.date)
     AND (
@@ -283,9 +283,9 @@ def get_incomplete_week_anomalies(conn, year, month, country_filter=None):
         cd.date as fecha_albaranado,
         cd.date_position
     FROM clients c
-    JOIN client_activities ca ON c.id = ca.client_id AND ca.activity_name = 'Albaranado'
+    JOIN client_activities ca ON c.id = ca.client_id AND ca.activity_id = 2
     JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
-    JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_name = 'Albaranado'
+    JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_id = 2
     WHERE date(cd.date) >= ? AND date(cd.date) <= ?
     {country_condition}
     ORDER BY c.name, cd.date_position
@@ -366,9 +366,9 @@ def get_holiday_anomalies(conn, year, month, country_filter=None):
         cd.date as fecha_albaranado,
         cd.date_position
     FROM clients c
-    JOIN client_activities ca ON c.id = ca.client_id AND ca.activity_name = 'Albaranado'
+    JOIN client_activities ca ON c.id = ca.client_id AND ca.activity_id = 2
     JOIN frequency_templates ft ON ca.frequency_template_id = ft.id
-    JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_name = 'Albaranado'
+    JOIN calculated_dates cd ON c.id = cd.client_id AND cd.activity_id = 2
     WHERE date(cd.date) IN ({placeholders})
     {country_condition}
     ORDER BY c.name, cd.date_position

@@ -40,7 +40,7 @@ def get_tomorrow_oc_clients(country_filter=None):
         SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
         FROM clients c
         JOIN calculated_dates cd ON c.id = cd.client_id
-        WHERE cd.activity_name = 'Fecha Envío OC' 
+        WHERE cd.activity_id = 1
         AND date(cd.date) = ?
         AND c.pais = ?
         ORDER BY c.name
@@ -51,7 +51,7 @@ def get_tomorrow_oc_clients(country_filter=None):
         SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
         FROM clients c
         JOIN calculated_dates cd ON c.id = cd.client_id
-        WHERE cd.activity_name = 'Fecha Envío OC' 
+        WHERE cd.activity_id = 1
         AND date(cd.date) = ?
         ORDER BY c.name
         """
@@ -93,10 +93,10 @@ def get_delivery_anomalies(country_filter=None):
             alb.date_position as pos_albaranado,
             ent.date_position as pos_entrega
         FROM clients c
-        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
-        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
+        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_id = 2
+        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_id = 3
                                     AND alb.date_position = ent.date_position
-        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_id = 2
         LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
         WHERE date(alb.date) > date(ent.date)
         AND c.pais = ?
@@ -133,10 +133,10 @@ def get_delivery_anomalies(country_filter=None):
             alb.date_position as pos_albaranado,
             ent.date_position as pos_entrega
         FROM clients c
-        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_name = 'Albaranado'
-        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_name = 'Fecha Entrega' 
+        JOIN calculated_dates alb ON c.id = alb.client_id AND alb.activity_id = 2
+        JOIN calculated_dates ent ON c.id = ent.client_id AND ent.activity_id = 3
                                     AND alb.date_position = ent.date_position
-        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_name = 'Albaranado'
+        LEFT JOIN client_activities ca_alb ON c.id = ca_alb.client_id AND ca_alb.activity_id = 2
         LEFT JOIN frequency_templates ft_alb ON ca_alb.frequency_template_id = ft_alb.id
         WHERE date(alb.date) > date(ent.date)
         AND (
@@ -191,7 +191,7 @@ def get_monthly_delivery_data(year, month, country_filter=None):
             COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_name LIKE '%Entrega%' 
+        WHERE cd.activity_id = 3
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         AND c.pais = ?
         GROUP BY date(cd.date)
@@ -205,7 +205,7 @@ def get_monthly_delivery_data(year, month, country_filter=None):
             COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_name LIKE '%Entrega%' 
+        WHERE cd.activity_id = 3
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
@@ -226,25 +226,27 @@ def get_activity_counts(country_filter=None):
     if country_filter:
         query = """
         SELECT 
-            cd.activity_name,
+            COALESCE(ac.name, cd.activity_name) as activity_name,
             COUNT(*) as total_fechas,
             COUNT(DISTINCT cd.client_id) as clientes_con_actividad
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
+        LEFT JOIN activities_catalog ac ON ac.id = cd.activity_id
         WHERE c.pais = ?
-        GROUP BY cd.activity_name
+        GROUP BY COALESCE(ac.name, cd.activity_name)
         ORDER BY total_fechas DESC
         """
         df = _cached_query_df(query, (country_filter,))
     else:
         query = """
         SELECT 
-            cd.activity_name,
+            COALESCE(ac.name, cd.activity_name) as activity_name,
             COUNT(*) as total_fechas,
             COUNT(DISTINCT cd.client_id) as clientes_con_actividad
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        GROUP BY cd.activity_name
+        LEFT JOIN activities_catalog ac ON ac.id = cd.activity_id
+        GROUP BY COALESCE(ac.name, cd.activity_name)
         ORDER BY total_fechas DESC
         """
         df = _cached_query_df(query, tuple())
