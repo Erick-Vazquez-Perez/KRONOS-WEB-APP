@@ -84,8 +84,8 @@ def show_clients_gallery():
                 del st.session_state["client_search"]
             st.rerun()
     
-    # Fila inferior: filtros adicionales  
-    col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 2, 2, 2, 2, 2, 1])
+    # Fila inferior: filtros adicionales
+    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([2, 2, 2, 2, 2, 2, 2, 1])
     
     with col1:
         # Filtro por CSR
@@ -128,6 +128,26 @@ def show_clients_gallery():
         )
     
     with col5:
+        # Filtro por calendario SAP
+        if 'calendario_sap' in clients.columns:
+            calendario_sap_values = (
+                clients['calendario_sap']
+                .fillna('')
+                .astype(str)
+                .map(lambda x: x.strip())
+            )
+            calendario_sap_options = ['Todos'] + sorted([v for v in calendario_sap_values.unique() if v])
+        else:
+            calendario_sap_options = ['Todos']
+
+        selected_calendario_sap = st.selectbox(
+            "Filtrar por Calendario SAP:",
+            calendario_sap_options,
+            index=0,
+            key="calendario_sap_filter"
+        )
+
+    with col6:
         # Filtro por país
         pais_options = ['Todos'] + get_paises()
         
@@ -149,8 +169,8 @@ def show_clients_gallery():
                 index=0,  # Siempre empezar con "Todos"
                 key="pais_filter"
             )
-    
-    with col6:
+
+    with col7:
         # Ordenar por
         sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región', 'País']
         sort_by = st.selectbox(
@@ -159,12 +179,12 @@ def show_clients_gallery():
             index=0,  # Siempre empezar con "Nombre A-Z"
             key="sort_filter"
         )
-    
-    with col7:
+
+    with col8:
         st.write("")  # Espacio para alinear el botón
         if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
             # Eliminar todas las keys de los filtros para que se reinicialicen
-            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "tipo_filter", "region_filter", "pais_filter", "sort_filter"]
+            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "tipo_filter", "region_filter", "calendario_sap_filter", "pais_filter", "sort_filter"]
             for key in filter_keys:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -200,6 +220,16 @@ def show_clients_gallery():
     # Aplicar filtro de región
     if selected_region and selected_region != 'Todos':
         filtered_clients = filtered_clients[filtered_clients['region'] == selected_region]
+
+    # Aplicar filtro de calendario SAP
+    if (
+        'calendario_sap' in filtered_clients.columns
+        and selected_calendario_sap
+        and selected_calendario_sap != 'Todos'
+    ):
+        filtered_clients = filtered_clients[
+            filtered_clients['calendario_sap'].fillna('').astype(str).map(lambda x: x.strip()) == selected_calendario_sap
+        ]
     
     # Aplicar filtro de país (solo si el usuario no tiene un filtro fijo)
     if not has_country_filter():
@@ -232,7 +262,7 @@ def show_clients_gallery():
         st.info("""
         **Sugerencias:**
         - Intenta con términos de búsqueda más generales
-        - Revisa los filtros seleccionados (CSR, Vendedor, Tipo, Región, País)
+        - Revisa los filtros seleccionados (CSR, Vendedor, Tipo, Región, Calendario SAP, País)
         - Usa el botón 'Limpiar Filtros' para resetear todos los filtros
         """)
         return
@@ -259,6 +289,8 @@ def show_clients_gallery():
             active_filters.append(f"Tipo: {selected_tipo}")
         if selected_region != 'Todos':
             active_filters.append(f"Región: {selected_region}")
+        if selected_calendario_sap != 'Todos':
+            active_filters.append(f"Calendario SAP: {selected_calendario_sap}")
         if selected_pais != 'Todos':
             active_filters.append(f"País: {selected_pais}")
         if sort_by != 'Nombre A-Z':
