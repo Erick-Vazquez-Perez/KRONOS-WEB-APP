@@ -86,6 +86,28 @@ def show_clients_gallery():
     
     # Fila inferior: filtros adicionales
     col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([2, 2, 2, 2, 2, 2, 2, 1])
+
+    # Importante: limpiar estado ANTES de instanciar los widgets
+    with col8:
+        st.write("")  # Espacio para alinear el botón
+        if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
+            st.session_state["csr_filter"] = "Todos"
+            st.session_state["vendedor_filter"] = "Todos"
+            st.session_state["tipo_filter"] = "Todos"
+            st.session_state["region_filter"] = "Todos"
+            st.session_state["calendario_sap_filter"] = "Todos"
+
+            if not has_country_filter():
+                st.session_state["pais_filter"] = "Todos"
+            else:
+                if "pais_filter" in st.session_state:
+                    del st.session_state["pais_filter"]
+
+            st.session_state["sort_filter"] = "Nombre A-Z"
+
+            # Mantener el botón de búsqueda "Limpiar" como el encargado de borrar texto
+            # (evita pelear con el widget ya instanciado arriba)
+            st.rerun()
     
     with col1:
         # Filtro por CSR
@@ -180,15 +202,7 @@ def show_clients_gallery():
             key="sort_filter"
         )
 
-    with col8:
-        st.write("")  # Espacio para alinear el botón
-        if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
-            # Eliminar todas las keys de los filtros para que se reinicialicen
-            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "tipo_filter", "region_filter", "calendario_sap_filter", "pais_filter", "sort_filter"]
-            for key in filter_keys:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+
     
     # Filtrar clientes basado en los criterios seleccionados
     filtered_clients = clients.copy()
