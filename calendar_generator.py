@@ -557,6 +557,29 @@ class CalendarGenerator:
                     zipf.write(file_path, arcname)
         
         return zip_path
+    
+    def create_zip_from_files_with_folders(self, files_with_folders, zip_path=None):
+        """
+        Crea un archivo ZIP con los documentos organizados en carpetas por código de calendario SAP
+        
+        Args:
+            files_with_folders: Lista de tuplas (ruta_archivo, nombre_carpeta)
+            zip_path: Ruta del archivo ZIP a crear
+        
+        Returns:
+            Ruta del archivo ZIP creado
+        """
+        if zip_path is None:
+            zip_path = os.path.join(tempfile.gettempdir(), f"Calendarios_GL_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path, folder_name in files_with_folders:
+                if os.path.exists(file_path):
+                    # Usar carpeta/nombre_archivo como ruta en el ZIP
+                    arcname = os.path.join(folder_name, os.path.basename(file_path))
+                    zipf.write(file_path, arcname)
+        
+        return zip_path
 
 def get_clients_by_type(tipo_cliente=None, country_filter=None):
     """
@@ -657,3 +680,112 @@ def get_available_client_types():
             types.add(client_type)
     
     return sorted(list(types))
+
+def get_available_sap_calendar_codes():
+    """
+    Obtiene los códigos de calendario SAP disponibles en la base de datos
+    """
+    df_clients = get_clients()
+    
+    if df_clients.empty:
+        return []
+    
+    clients = df_clients.to_dict('records')
+    sap_codes = set()
+    
+    for client in clients:
+        # Buscar el campo calendario_sap
+        sap_code = client.get('calendario_sap') or client.get('sap_calendar') or client.get('calendar_sap')
+        if sap_code and sap_code.strip():  # Solo agregar si tiene valor
+            sap_codes.add(sap_code.strip())
+    
+    return sorted(list(sap_codes))
+
+def get_clients_by_sap_calendar(sap_calendar_code=None, country_filter=None):
+    """
+    Obtiene clientes filtrados por código de calendario SAP y/o país
+    NOTA: get_clients() ya aplica el filtro de país del usuario automáticamente
+    
+    Args:
+        sap_calendar_code: Código de calendario SAP para filtrar (ej: 'M30', 'Q15', etc.)
+        country_filter: País para filtrar adicionalmente
+    
+    Returns:
+        Lista de clientes que coinciden con el código de calendario SAP
+    """
+    # get_clients() ya aplica filtros de usuario automáticamente
+    df_clients = get_clients(use_cache=True)
+    
+    if df_clients.empty:
+        print("get_clients() retornó DataFrame vacío")
+        return []
+    
+    print(f"get_clients() retornó {len(df_clients)} clientes para filtro SAP")
+    
+    clients = df_clients.to_dict('records')
+    
+    # Renombrar columnas para compatibilidad con la interfaz
+    for client in clients:
+        # Asegurar que el ID esté disponible
+        if 'id' not in client:
+            print(f"Cliente {client.get('name', 'Desconocido')} no tiene ID")
+        
+        # Mapear campos a nombres esperados por la interfaz
+        if 'name' in client and 'nombre_cliente' not in client:
+            client['nombre_cliente'] = client['name']
+        
+        # Mapear tipo_cliente y pais
+        if 'tipo_cliente' not in client and 'type' in client:
+            client['tipo_cliente'] = client['type']
+        if 'pais' not in client and 'country' in client:
+            client['pais'] = client['country']
+        
+        # Asegurar que siempre tengamos pais (fallback)
+        if 'pais' not in client or not client['pais']:
+            client['pais'] = 'N/A'
+        
+        # Asegurar que siempre tengamos tipo_cliente (fallback)
+        if 'tipo_cliente' not in client or not client['tipo_cliente']:
+            client['tipo_cliente'] = 'N/A'
+        
+        # Asegurar que calendario_sap esté normalizado
+        if 'calendario_sap' not in client:
+            client['calendario_sap'] = client.get('sap_calendar') or client.get('calendar_sap') or ''
+        
+        # Inferir frecuencia del calendario_sap si no existe (solo como fallback)
+        if 'frecuencia' not in client or not client['frecuencia']:
+            calendario_sap = client.get('calendario_sap', '')
+            if calendario_sap:
+                if calendario_sap.startswith('Q') or '15' in calendario_sap:
+                    client['frecuencia'] = 'Quincenal'
+                elif calendario_sap.startswith('M') or 'M' in calendario_sap:
+                    client['frecuencia'] = 'Mensual'
+                elif calendario_sap.startswith('B') or '60' in calendario_sap:
+                    client['frecuencia'] = 'Bimensual'
+                elif calendario_sap.startswith('T') or '90' in calendario_sap:
+                    client['frecuencia'] = 'Trimestral'
+                elif calendario_sap.startswith('S') or '180' in calendario_sap:
+                    client['frecuencia'] = 'Semestral'
+                elif calendario_sap.startswith('A') or '365' in calendario_sap:
+                    client['frecuencia'] = 'Anual'
+                else:
+                    client['frecuencia'] = 'Mensual'
+            else:
+                client['frecuencia'] = 'Mensual'
+    
+    print(f"Procesados {len(clients)} clientes con campos mapeados para filtro SAP")
+    
+    # Aplicar filtro de código de calendario SAP
+    if sap_calendar_code and sap_calendar_code != 'Todos':
+        clients_before = len(clients)
+        clients = [c for c in clients if c.get('calendario_sap', '').strip() == sap_calendar_code.strip()]
+        print(f"Filtro por código SAP '{sap_calendar_code}': {clients_before} -> {len(clients)} clientes")
+    
+    # Aplicar filtro de país adicional si se especifica
+    if country_filter and country_filter != 'Todos los países':
+        clients_before = len(clients)
+        clients = [c for c in clients if c.get('pais') == country_filter]
+        print(f"Filtro adicional por país '{country_filter}': {clients_before} -> {len(clients)} clientes")
+    
+    print(f"Retornando {len(clients)} clientes finales para código SAP")
+    return clients

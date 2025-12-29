@@ -6,7 +6,13 @@ import streamlit as st
 import os
 import tempfile
 from datetime import datetime
-from calendar_generator import CalendarGenerator, get_clients_by_type, get_available_client_types
+from calendar_generator import (
+    CalendarGenerator, 
+    get_clients_by_type, 
+    get_available_client_types,
+    get_available_sap_calendar_codes,
+    get_clients_by_sap_calendar
+)
 from database import get_clients, get_client_activities, get_frequency_template_by_id
 from auth_system import get_user_country_filter, has_country_filter
 import base64
@@ -104,7 +110,7 @@ def show_calendar_generator():
         # Selector de modo de generación
         generation_mode = st.radio(
             "Modo de generación:",
-            ["Cliente individual", "Por tipo de cliente", "Todos los clientes"],
+            ["Cliente individual", "Por tipo de cliente", "Por código calendario SAP", "Todos los clientes"],
             help="Selecciona cómo quieres generar los calendarios"
         )
     
@@ -150,6 +156,8 @@ def show_calendar_generator():
         selected_clients = show_individual_client_selection(country_filter)
     elif generation_mode == "Por tipo de cliente":
         selected_clients = show_client_type_selection(country_filter)
+    elif generation_mode == "Por código calendario SAP":
+        selected_clients = show_sap_calendar_selection(country_filter)
     elif generation_mode == "Todos los clientes":
         selected_clients = show_all_clients_selection(country_filter)
     
@@ -315,6 +323,76 @@ def show_client_type_selection(country_filter=None):
         st.warning(f"No se encontraron clientes del tipo '{selected_type}'.")
         return []
 
+def show_sap_calendar_selection(country_filter=None):
+    """
+    Interfaz para selección por código de calendario SAP
+    """
+    st.subheader("Selección por Código de Calendario SAP")
+    
+    # Obtener códigos SAP disponibles
+    available_sap_codes = get_available_sap_calendar_codes()
+    
+    if not available_sap_codes:
+        st.warning("No hay códigos de calendario SAP disponibles.")
+        return []
+    
+    # Selector de código SAP
+    selected_sap_code = st.selectbox(
+        "Código de calendario SAP:",
+        ["Todos"] + available_sap_codes,
+        help="Selecciona el código de calendario SAP para filtrar clientes"
+    )
+    
+    # Obtener clientes con el código SAP seleccionado
+    if selected_sap_code == "Todos":
+        clients = get_clients_by_sap_calendar(country_filter=country_filter)
+    else:
+        clients = get_clients_by_sap_calendar(sap_calendar_code=selected_sap_code, country_filter=country_filter)
+    
+    if clients:
+        st.success(f"Se encontraron **{len(clients)}** clientes con código SAP '{selected_sap_code}'")
+        
+        # Mostrar distribución por tipo de cliente
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            types = {}
+            for client in clients:
+                client_type = client.get('tipo_cliente', 'N/A')
+                types[client_type] = types.get(client_type, 0) + 1
+            
+            st.write("**Distribución por tipo:**")
+            for client_type, count in types.items():
+                st.write(f"- {client_type}: {count} clientes")
+        
+        with col2:
+            # Mostrar distribución por país (solo si no hay filtro)
+            if not country_filter:
+                countries = {}
+                for client in clients:
+                    country = client.get('pais', 'N/A')
+                    countries[country] = countries.get(country, 0) + 1
+                
+                st.write("**Distribución por país:**")
+                for country, count in countries.items():
+                    st.write(f"- {country}: {count} clientes")
+            else:
+                st.write(f"**País filtrado:** {country_filter}")
+        
+        # Mostrar lista de clientes seleccionados
+        with st.expander("Ver clientes seleccionados", expanded=False):
+            for client in clients:
+                st.write(f"- **{client['nombre_cliente']}** - Tipo: {client.get('tipo_cliente', 'N/A')} - País: {client.get('pais', 'N/A')} - Código SAP: {client.get('calendario_sap', 'N/A')}")
+        
+        # Mostrar frecuencias de algunos clientes
+        st.divider()
+        show_multiple_clients_frequencies(clients, max_clients_to_show=3)
+        
+        return clients
+    else:
+        st.warning(f"No se encontraron clientes con código SAP '{selected_sap_code}'.")
+        return []
+
 def show_all_clients_selection(country_filter=None):
     """
     Interfaz para selección de todos los clientes
@@ -375,9 +453,18 @@ def show_all_clients_selection(country_filter=None):
         st.warning("No hay clientes disponibles.")
         return []
 
+def get_sap_folder_name(calendario_sap):
+    """
+    Obtiene el nombre de carpeta según el código de calendario SAP
+    """
+    if not calendario_sap or calendario_sap.strip() == '' or calendario_sap.strip() == '0' or calendario_sap.strip().lower() == 'n/a':
+        return "Sin calendario"
+    return calendario_sap.strip()
+
 def generate_calendars(clients, year, template_path):
     """
     Genera los calendarios para los clientes seleccionados
+    Organiza los archivos en carpetas por código de calendario SAP
     """
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -389,7 +476,8 @@ def generate_calendars(clients, year, template_path):
         # Inicializar generador
         generator = CalendarGenerator(template_path)
         
-        generated_files = []
+        # Diccionario para almacenar archivos con su ruta relativa en el ZIP
+        generated_files_with_folders = []  # Lista de tuplas (ruta_archivo, carpeta_sap)
         total_clients = len(clients)
         
         for i, client in enumerate(clients):
@@ -399,45 +487,58 @@ def generate_calendars(clients, year, template_path):
                 progress_bar.progress(progress)
                 status_text.text(f"Generando calendario para {client.get('nombre_cliente', 'Cliente')} ({i+1}/{total_clients})")
                 
-                # Generar documento
+                # Obtener código de calendario SAP para la carpeta
+                calendario_sap = client.get('calendario_sap', '') or client.get('sap_calendar', '') or ''
+                folder_name = get_sap_folder_name(calendario_sap)
+                
+                # Crear subcarpeta si no existe
+                folder_path = os.path.join(temp_dir, folder_name)
+                if not os.path.exists(folder_path):
+                    os.makedirs(folder_path)
+                
+                # Generar documento en la subcarpeta correspondiente
                 client_data = dict(client)
+                safe_client_name = client.get('nombre_cliente', 'Cliente').replace('/', '_').replace('\\', '_')
                 output_path = generator.generate_document(client_data, 
-                    output_path=os.path.join(temp_dir, f"CF {client.get('nombre_cliente', 'Cliente').replace('/', '_')} CALENDARIO {year}.docx"),
+                    output_path=os.path.join(folder_path, f"CF {safe_client_name} CALENDARIO {year}.docx"),
                     year=year)
                 
                 if os.path.exists(output_path):
-                    generated_files.append(output_path)
+                    generated_files_with_folders.append((output_path, folder_name))
                 
             except Exception as e:
                 st.error(f"Error generando calendario para {client.get('nombre_cliente', 'Cliente')}: {str(e)}")
                 continue
         
         # Crear ZIP si hay múltiples archivos
-        if generated_files:
-            if len(generated_files) == 1:
-                # Un solo archivo - descarga directa
+        if generated_files_with_folders:
+            if len(generated_files_with_folders) == 1:
+                # Un solo archivo - descarga directa (sin carpeta)
                 status_text.text("Preparando descarga...")
                 
-                with open(generated_files[0], "rb") as file:
+                with open(generated_files_with_folders[0][0], "rb") as file:
                     file_data = file.read()
                 
                 st.success(f"Carta generada exitosamente!")
                 st.download_button(
                     label="Descargar Carta",
                     data=file_data,
-                    file_name=os.path.basename(generated_files[0]),
+                    file_name=os.path.basename(generated_files_with_folders[0][0]),
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
             else:
-                # Múltiples archivos - crear ZIP
-                status_text.text("Creando archivo ZIP...")
+                # Múltiples archivos - crear ZIP con carpetas
+                status_text.text("Creando archivo ZIP con carpetas...")
                 
-                zip_path = generator.create_zip_from_files(generated_files)
+                zip_path = generator.create_zip_from_files_with_folders(generated_files_with_folders)
                 
                 with open(zip_path, "rb") as zip_file:
                     zip_data = zip_file.read()
                 
-                st.success(f"Se generaron {len(generated_files)} cartas exitosamente!")
+                # Contar carpetas únicas
+                unique_folders = set(f[1] for f in generated_files_with_folders)
+                
+                st.success(f"Se generaron {len(generated_files_with_folders)} cartas en {len(unique_folders)} carpetas!")
                 st.download_button(
                     label="Descargar Cartas (ZIP)",
                     data=zip_data,
