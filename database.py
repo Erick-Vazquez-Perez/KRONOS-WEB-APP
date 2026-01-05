@@ -1713,6 +1713,119 @@ def get_client_activity_summary(client_id, use_cache=True):
     finally:
         return_pooled_connection(conn)
 
+
+# === FUNCIONES DE COPIA DE FRECUENCIAS ===
+
+def get_clients_with_default_activities_only(source_client_id, use_cache=True):
+    """
+    Obtiene clientes que SOLO tienen las 3 actividades por defecto (Fecha Envío OC, Albaranado, Fecha Entrega).
+    Excluye clientes que tengan actividades extra.
+    """
+    if use_cache:
+        cache_key = f"default_activities_only_{source_client_id}"
+        cached_result = _db_cache.get(cache_key, 180)
+        if cached_result is not None:
+            return cached_result
+    
+    conn = get_pooled_connection()
+    try:
+        # Actividades por defecto
+        default_activities = ('Fecha Envío OC', 'Albaranado', 'Fecha Entrega')
+        
+        query = '''
+        SELECT c.id, c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, c.pais
+        FROM clients c
+        WHERE c.id != ?
+        AND (
+            -- Cliente tiene exactamente 3 actividades
+            SELECT COUNT(*) FROM client_activities ca WHERE ca.client_id = c.id
+        ) = 3
+        AND (
+            -- Y las 3 son las actividades por defecto
+            SELECT COUNT(*) FROM client_activities ca 
+            WHERE ca.client_id = c.id 
+            AND ca.activity_name IN (?, ?, ?)
+        ) = 3
+        ORDER BY c.name
+        '''
+        
+        df = pd.read_sql_query(query, conn, params=(
+            source_client_id, 
+            default_activities[0], 
+            default_activities[1], 
+            default_activities[2]
+        ))
+        
+        if use_cache:
+            cache_key = f"default_activities_only_{source_client_id}"
+            _db_cache.set(cache_key, df, 180)
+        
+        return df
+    except Exception as e:
+        print(f"Error obteniendo clientes con actividades por defecto: {e}")
+        return pd.DataFrame()
+    finally:
+        return_pooled_connection(conn)
+
+
+def copy_frequencies_to_clients(source_client_id, target_client_ids):
+    """
+    Copia las frecuencias de las actividades del cliente origen a los clientes destino.
+    Solo funciona para clientes que tienen las mismas actividades.
+    """
+    if not target_client_ids:
+        return True, "No hay clientes seleccionados"
+    
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Usar transacción para operaciones atómicas
+        cursor.execute("BEGIN TRANSACTION")
+        
+        # Obtener las frecuencias del cliente origen
+        cursor.execute('''
+            SELECT activity_name, frequency_template_id
+            FROM client_activities 
+            WHERE client_id = ?
+        ''', (source_client_id,))
+        
+        source_frequencies = cursor.fetchall()
+        
+        if not source_frequencies:
+            conn.rollback()
+            return False, "El cliente origen no tiene actividades configuradas"
+        
+        # Actualizar las frecuencias de cada cliente destino
+        updates_count = 0
+        for target_client_id in target_client_ids:
+            for activity_name, frequency_template_id in source_frequencies:
+                cursor.execute('''
+                    UPDATE client_activities 
+                    SET frequency_template_id = ?
+                    WHERE client_id = ? AND activity_name = ?
+                ''', (frequency_template_id, target_client_id, activity_name))
+                updates_count += cursor.rowcount
+        
+        conn.commit()
+        
+        target_count = len(target_client_ids)
+        
+        # Invalidar cache de actividades para todos los clientes afectados
+        for client_id in target_client_ids:
+            _db_cache.invalidate_pattern(f"activities_{client_id}")
+            _db_cache.invalidate_pattern(f"activity_summary_{client_id}")
+        
+        return True, f"Se copiaron las frecuencias a {target_count} cliente(s) exitosamente ({updates_count} actualizaciones)"
+        
+    except Exception as e:
+        print(f"Error copiando frecuencias: {e}")
+        conn.rollback()
+        return False, f"Error al copiar frecuencias: {str(e)}"
+    finally:
+        return_pooled_connection(conn)
+
+
 # === FUNCIONES DE ANÁLISIS Y MONITOREO ===
 
 def get_database_statistics():

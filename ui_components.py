@@ -14,9 +14,10 @@ from database import (
     add_client_activity, delete_client_activity,
     get_calculated_dates, get_multiple_calculated_dates, save_calculated_dates, update_calculated_date,
     get_db_connection, get_cache_stats, clear_cache_pattern,
-    get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary
+    get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary,
+    get_clients_with_default_activities_only, copy_frequencies_to_clients
 )
-from date_calculator import recalculate_client_dates
+from date_calculator import recalculate_client_dates, recalculate_client_dates_by_year
 from calendar_utils import create_client_calendar_table, format_frequency_description, create_client_calendar_table_by_year, get_client_year_summary_by_year, get_available_years
 from client_constants import get_tipos_cliente, get_regiones, get_paises
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
@@ -711,13 +712,34 @@ def show_client_detail():
     
     with col5:
         if not is_read_only_mode():
-            if st.button("Recalcular", key=f"recalc_{client_id}"):
-                with st.spinner("Recalculando fechas..."):
-                    recalculate_client_dates(client_id)
-                st.success("Fechas recalculadas")
-                st.rerun()
+            # Key para el estado de confirmación del recálculo
+            confirm_recalc_key = f'confirm_recalc_{client_id}'
+            is_confirm_recalc = st.session_state.get(confirm_recalc_key, False)
+            
+            button_text = "CONFIRMAR" if is_confirm_recalc else "Recalcular Fechas"
+            button_type = "primary" if is_confirm_recalc else "secondary"
+            
+            if st.button(button_text, key=f"recalc_{client_id}", type=button_type):
+                if is_confirm_recalc:
+                    # Segunda presión: ejecutar recálculo
+                    with st.spinner(f"Recalculando fechas para {selected_year}..."):
+                        recalculate_client_dates_by_year(client_id, selected_year)
+                    st.success(f"Fechas recalculadas para {selected_year}")
+                    st.session_state[confirm_recalc_key] = False
+                    st.rerun()
+                else:
+                    # Primera presión: pedir confirmación
+                    st.session_state[confirm_recalc_key] = True
+                    st.rerun()
+            
+            # Mostrar mensaje de confirmación y botón cancelar
+            if is_confirm_recalc:
+                st.warning(f"Confirmar recálculo de fechas de **{client['name']}** para **{selected_year}**")
+                if st.button("Cancelar", key=f"cancel_recalc_{client_id}"):
+                    st.session_state[confirm_recalc_key] = False
+                    st.rerun()
         else:
-            st.button("Recalcular", key=f"recalc_{client_id}", disabled=True, help="No disponible en producción")
+            st.button("Recalcular Fechas", key=f"recalc_{client_id}", disabled=True, help="No disponible en producción")
     
     # Información de estado del calendario
     dates_df = get_calculated_dates(client_id)
@@ -763,8 +785,9 @@ def show_client_detail():
                 st.info("Funcionalidad de exportar próximamente...")
         
         with col2:
-            if st.button("Enviar por Email", use_container_width=True, key=f"email_{client_id}"):
-                st.info("Funcionalidad de email próximamente...")
+            if st.button("Copiar Frecuencias", use_container_width=True, key=f"copy_freq_{client_id}"):
+                st.session_state[f'show_copy_frequencies_modal_{client_id}'] = True
+                st.rerun()
         
         with col3:
             if st.button("Copiar Fechas", use_container_width=True, key=f"copy_dates_{client_id}"):
@@ -836,6 +859,10 @@ def show_client_detail():
     # Mostrar modal de copia de fechas si está activado
     if st.session_state.get(f'show_copy_dates_modal_{client_id}', False):
         show_copy_dates_modal(client_id, client['name'])
+    
+    # Mostrar modal de copia de frecuencias si está activado
+    if st.session_state.get(f'show_copy_frequencies_modal_{client_id}', False):
+        show_copy_frequencies_modal(client_id, client['name'])
 
 # ========== MODAL DE COPIA DE FECHAS ==========
 
@@ -906,11 +933,20 @@ def show_copy_dates_modal(source_client_id, source_client_name):
                 else:
                     st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
                     
+                    # Inicializar estado de selección para todos los clientes visibles
+                    select_all_key = f"select_all_copy_{source_client_id}"
+                    
                     # Checkbox para seleccionar todos
                     select_all = st.checkbox(
                         "Seleccionar todos los clientes visibles",
-                        key=f"select_all_copy_{source_client_id}"
+                        key=select_all_key
                     )
+                    
+                    # Si se marca "seleccionar todos", actualizar todos los checkboxes de los clientes filtrados
+                    if select_all:
+                        for _, client in filtered_clients.iterrows():
+                            checkbox_key = f"copy_client_{source_client_id}_{client['id']}"
+                            st.session_state[checkbox_key] = True
                     
                     # Lista de checkboxes para cada cliente
                     selected_clients = []
@@ -921,12 +957,15 @@ def show_copy_dates_modal(source_client_id, source_client_name):
                             client_id = client['id']
                             client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
                             
-                            checkbox_value = select_all or st.session_state.get(f"copy_client_{source_client_id}_{client_id}", False)
+                            checkbox_key = f"copy_client_{source_client_id}_{client_id}"
+                            
+                            # Usar el valor actual del session_state
+                            current_value = st.session_state.get(checkbox_key, False)
                             
                             if st.checkbox(
                                 client_info,
-                                value=checkbox_value,
-                                key=f"copy_client_{source_client_id}_{client_id}"
+                                value=current_value,
+                                key=checkbox_key
                             ):
                                 selected_clients.append(client_id)
                     
@@ -966,6 +1005,147 @@ def show_copy_dates_modal(source_client_id, source_client_name):
                                 if key in st.session_state:
                                     del st.session_state[key]
                             st.session_state[f'show_copy_dates_modal_{source_client_id}'] = False
+                            st.rerun()
+
+# ========== MODAL DE COPIA DE FRECUENCIAS ==========
+
+def show_copy_frequencies_modal(source_client_id, source_client_name):
+    """Muestra el modal para seleccionar clientes y copiar frecuencias"""
+    
+    # Contenedor del modal con estilo
+    with st.container():
+        st.markdown("---")
+        st.markdown(f"### Copiar Frecuencias de: {source_client_name}")
+        st.markdown("Selecciona los clientes que recibirán las frecuencias. Solo se muestran clientes que tienen únicamente las 3 actividades por defecto (sin actividades extra).")
+        
+        # Obtener clientes compatibles (solo con actividades por defecto)
+        compatible_clients = get_clients_with_default_activities_only(source_client_id)
+        
+        if compatible_clients.empty:
+            st.warning("No se encontraron clientes compatibles.")
+            st.info("Para que un cliente aparezca aquí, debe tener únicamente las 3 actividades por defecto: Fecha Envío OC, Albaranado, Fecha Entrega (sin actividades extra).")
+            
+            # Mostrar resumen de actividades del cliente origen
+            source_activities = get_client_activity_summary(source_client_id)
+            if not source_activities.empty:
+                st.markdown("**Configuración del cliente origen:**")
+                for _, activity in source_activities.iterrows():
+                    st.write(f"- {activity['activity_name']}: {activity['frequency_name']}")
+            
+            # Botón para cerrar
+            if st.button("Cerrar", use_container_width=True, key=f"close_copy_freq_{source_client_id}"):
+                st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
+                st.rerun()
+        else:
+            # Mostrar información de las frecuencias a copiar
+            source_activities = get_client_activity_summary(source_client_id)
+            if source_activities.empty:
+                st.warning("El cliente origen no tiene frecuencias configuradas para copiar.")
+            else:
+                activities_count = len(source_activities)
+                
+                st.metric("Actividades con Frecuencias a Copiar", activities_count)
+                
+                st.markdown("**Frecuencias que se copiarán:**")
+                for _, activity in source_activities.iterrows():
+                    st.write(f"- {activity['activity_name']}: **{activity['frequency_name']}**")
+                
+                st.markdown("---")
+                
+                # Búsqueda de clientes
+                search_text = st.text_input(
+                    "Buscar clientes:",
+                    placeholder="Buscar por nombre, código AG, CSR, vendedor...",
+                    key=f"search_copy_freq_{source_client_id}"
+                )
+                
+                # Filtrar clientes según búsqueda
+                filtered_clients = compatible_clients.copy()
+                if search_text:
+                    filtered_clients = filtered_clients[
+                        filtered_clients['name'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['codigo_ag'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['csr'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['vendedor'].str.contains(search_text, case=False, na=False)
+                    ]
+                
+                if filtered_clients.empty:
+                    st.info("No se encontraron clientes que coincidan con la búsqueda.")
+                else:
+                    st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
+                    
+                    # Inicializar estado de selección para todos los clientes visibles
+                    select_all_key = f"select_all_copy_freq_{source_client_id}"
+                    
+                    # Checkbox para seleccionar todos
+                    select_all = st.checkbox(
+                        "Seleccionar todos los clientes visibles",
+                        key=select_all_key
+                    )
+                    
+                    # Si se marca "seleccionar todos", actualizar todos los checkboxes de los clientes filtrados
+                    if select_all:
+                        for _, client in filtered_clients.iterrows():
+                            checkbox_key = f"copy_freq_client_{source_client_id}_{client['id']}"
+                            st.session_state[checkbox_key] = True
+                    
+                    # Lista de checkboxes para cada cliente
+                    selected_clients = []
+                    
+                    # Contenedor scrolleable para la lista de clientes
+                    with st.container(height=300):
+                        for _, client in filtered_clients.iterrows():
+                            client_id = client['id']
+                            client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
+                            
+                            checkbox_key = f"copy_freq_client_{source_client_id}_{client_id}"
+                            
+                            # Usar el valor actual del session_state
+                            current_value = st.session_state.get(checkbox_key, False)
+                            
+                            if st.checkbox(
+                                client_info,
+                                value=current_value,
+                                key=checkbox_key
+                            ):
+                                selected_clients.append(client_id)
+                    
+                    # Botones de acción
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    
+                    with col1:
+                        if st.button("Copiar Frecuencias", type="primary", use_container_width=True, key=f"execute_copy_freq_{source_client_id}"):
+                            if not selected_clients:
+                                st.error("Selecciona al menos un cliente para copiar las frecuencias.")
+                            else:
+                                with st.spinner("Copiando frecuencias..."):
+                                    success, message = copy_frequencies_to_clients(source_client_id, selected_clients)
+                                
+                                if success:
+                                    st.success(message)
+                                    # Limpiar estados del modal
+                                    keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                                    for key in keys_to_clear:
+                                        if key in st.session_state:
+                                            del st.session_state[key]
+                                    st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+                    
+                    with col2:
+                        selected_count = len(selected_clients)
+                        if selected_count > 0:
+                            st.info(f"{selected_count} cliente(s) seleccionado(s)")
+                    
+                    with col3:
+                        if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_freq_{source_client_id}"):
+                            # Limpiar estados del modal
+                            keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
                             st.rerun()
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
