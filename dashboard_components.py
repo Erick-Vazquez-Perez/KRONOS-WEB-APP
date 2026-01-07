@@ -11,8 +11,24 @@ from database import (
 from werfen_styles import get_metric_card_html
 import calendar
 from anomaly_detector import get_comprehensive_anomalies, get_holidays_for_month, get_incomplete_weeks_info
-from auth_system import get_user_country_filter, has_country_filter, auth_system
+from auth_system import get_user_country_filter, has_country_filter, auth_system, get_current_user, UserRole
 from client_constants import get_paises
+
+
+def format_country_filter(country_filter):
+    """Formatea el filtro de país para mostrar en la UI.
+    Convierte listas a texto legible (ej: ['México', 'Colombia'] -> 'México y Colombia')
+    """
+    if country_filter is None:
+        return None
+    if isinstance(country_filter, list):
+        if len(country_filter) == 1:
+            return country_filter[0]
+        elif len(country_filter) == 2:
+            return f"{country_filter[0]} y {country_filter[1]}"
+        else:
+            return ", ".join(country_filter[:-1]) + f" y {country_filter[-1]}"
+    return country_filter
 
 
 @st.cache_data(ttl=90, show_spinner=False)
@@ -351,19 +367,31 @@ def show_dashboard():
     
     # Determinar el filtro de país a usar
     dashboard_country_filter = None
+    dashboard_country_display = None  # Versión formateada para mostrar en UI
     
-    # Si el usuario tiene un filtro de país fijo (como GLCOUser)
-    if has_country_filter():
+    # Identificar si el usuario es CS_USER
+    current_user = get_current_user()
+    is_cs_user = bool(current_user and current_user.get('role') == UserRole.CS_USER)
+
+    # Usuarios con filtro fijo (MX/CO) mantienen vista filtrada
+    if has_country_filter() and not is_cs_user:
         dashboard_country_filter = get_user_country_filter()
-        st.info(f"Vista filtrada: Dashboard de **{dashboard_country_filter}**")
+        dashboard_country_display = format_country_filter(dashboard_country_filter)
+        st.info(f"Vista filtrada: Dashboard de **{dashboard_country_display}**")
     
-    # Si es administrador, mostrar selector de país
-    elif auth_system.is_admin():
+    # Admin y CS_USER: mostrar selector de país
+    elif auth_system.is_admin() or is_cs_user:
         st.subheader("Configuración del Dashboard")
         
         col1, col2 = st.columns([2, 4])
         with col1:
-            paises_options = ['Todos los países'] + get_paises()
+            if is_cs_user and has_country_filter():
+                allowed = get_user_country_filter()
+                if not isinstance(allowed, list):
+                    allowed = [allowed]
+                paises_options = ['Todos los países'] + allowed
+            else:
+                paises_options = ['Todos los países'] + get_paises()
             selected_country = st.selectbox(
                 "Filtrar dashboard por país:",
                 paises_options,
@@ -374,10 +402,17 @@ def show_dashboard():
             
             if selected_country != 'Todos los países':
                 dashboard_country_filter = selected_country
+                dashboard_country_display = selected_country
+            else:
+                # Para CS_USER, 'Todos' significa sus países permitidos (sin filtro adicional)
+                if is_cs_user and has_country_filter():
+                    dashboard_country_display = format_country_filter(get_user_country_filter())
+                else:
+                    dashboard_country_display = None
         
         with col2:
             if dashboard_country_filter:
-                st.success(f"Mostrando datos de: **{dashboard_country_filter}**")
+                st.success(f"Mostrando datos de: **{dashboard_country_display}**")
             else:
                 st.info("Mostrando datos de **todos los países**")
         
@@ -427,11 +462,11 @@ def show_dashboard():
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
-            country_text = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+            country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
             st.success(f"No hay fechas OC programadas para mañana{country_text}")
     
     with col2:
-        anomaly_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+        anomaly_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
         st.subheader(f"Anomalías y Alertas del Mes{anomaly_suffix}")
         
         # Obtener el mes y año actual
@@ -467,7 +502,7 @@ def show_dashboard():
                     if week_info['affected_weekdays']:
                         st.info(f"**{current_month_name}** tiene semanas incompletas que afectan: {', '.join(week_info['affected_weekdays'])}")
                     
-                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
                     st.warning(f"**{len(incomplete_anomalies)} clientes**{country_info} pueden verse afectados por semanas incompletas")
                     
                     display_df = incomplete_anomalies.copy()
@@ -489,7 +524,7 @@ def show_dashboard():
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
                 else:
-                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
                     st.success(f"No hay clientes{country_info} afectados por semanas incompletas")
             
             # Tab 2: Anomalías por días festivos
@@ -502,7 +537,7 @@ def show_dashboard():
                         holiday_text = ", ".join([f"{h[0].strftime('%d/%m')} ({h[1]})" for h in holidays])
                         st.info(f"**Festivos en {current_month_name}:** {holiday_text}")
                     
-                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
                     st.warning(f"**{len(holiday_anomalies)} clientes**{country_info} con albaranado en días festivos")
                     
                     display_df = holiday_anomalies.copy()
@@ -523,7 +558,7 @@ def show_dashboard():
                     
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
                 else:
-                    country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
                     st.success(f"No hay clientes{country_info} con albaranado en días festivos")
             
             # Tab 3: Resumen
@@ -547,7 +582,7 @@ def show_dashboard():
                 st.markdown(f"**Total de clientes únicos afectados:** {anomalies['total_affected_clients']}")
                 
         else:
-            country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+            country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
             st.success(f"No se detectaron anomalías{country_info} para {current_month_name} {current_year}")
         
         # Botón para gestión de festivos (solo en desarrollo)
@@ -567,7 +602,7 @@ def show_dashboard():
     st.markdown("---")
     
     # ========== TARJETAS DE MÉTRICAS ==========
-    country_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+    country_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
     st.subheader(f"Métricas Generales{country_suffix}")
     
     # Obtener datos para las métricas
@@ -587,7 +622,7 @@ def show_dashboard():
     
     with col1:
         # Primera métrica: Total de Clientes
-        country_label = f"{dashboard_country_filter}" if dashboard_country_filter else "sistema"
+        country_label = f"{dashboard_country_display}" if dashboard_country_display else "sistema"
         st.markdown(get_metric_card_html(
             "Total Clientes", 
             str(total_clients), 
@@ -628,7 +663,7 @@ def show_dashboard():
     st.markdown("---")
     
     # ========== SELECTOR Y GRÁFICO DE FECHAS DE ENTREGA ==========
-    analysis_suffix = f" - {dashboard_country_filter}" if dashboard_country_filter else ""
+    analysis_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
     st.subheader(f"Análisis de Fechas de Entrega por Mes{analysis_suffix}")
     
     # Selector de año y mes
@@ -658,7 +693,7 @@ def show_dashboard():
     selected_date = date(chart_year, chart_month, 1)
     current_month_date = date(current_date.year, current_date.month, 1)
     
-    country_text = f" ({dashboard_country_filter})" if dashboard_country_filter else ""
+    country_text = f" ({dashboard_country_display})" if dashboard_country_display else ""
     
     if selected_date < current_month_date:
         chart_subtitle = f"Fechas de Entrega del mes vencido ({chart_month_name} {chart_year}){country_text}"
@@ -674,7 +709,7 @@ def show_dashboard():
     
     if not monthly_data.empty:
         total_delivery_month = monthly_data['cantidad_entregas'].sum()
-        country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+        country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
         st.info(f"**{total_delivery_month} fechas de Entrega** programadas en {chart_month_name} {chart_year}{country_info}")
         
         # Mostrar gráfico de línea del mes
@@ -682,7 +717,7 @@ def show_dashboard():
         st.plotly_chart(line_chart, use_container_width=True)
         
     else:
-        country_info = f" en {dashboard_country_filter}" if dashboard_country_filter else ""
+        country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
         st.success(f"No hay fechas de Entrega programadas para {chart_month_name} {chart_year}{country_info}")
     
     st.markdown("---")

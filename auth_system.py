@@ -12,6 +12,7 @@ class UserRole(Enum):
     ADMIN = "gladmin"
     MX_USER = "glmxuser"
     CO_USER = "glcouser"
+    CS_USER = "glcsuser"
 
 class AuthSystem:
     """Sistema de autenticación y autorización"""
@@ -35,6 +36,24 @@ class AuthSystem:
                     "view_debug": True
                 },
                 "country_filter": None  # Sin filtro, ve todos los países
+            },
+            "glcsuser": {
+                "password_hash": self._hash_password("GLCSUser2024!"),
+                "role": UserRole.CS_USER,
+                "name": "Green Logistics CS User",
+                "permissions": {
+                    "read": True,
+                    "write": False,
+                    "delete": False,
+                    "admin": False,
+                    "modify_clients": False,
+                    "modify_activities": False,
+                    "modify_frequencies": False,
+                    "export_data": True,
+                    "view_debug": False
+                },
+                # Sin filtro de país: puede ver México y Colombia (y otros países si existieran)
+                "country_filter": None
             },
             "glmxuser": {
                 "password_hash": self._hash_password("GLMXUser2024!"),

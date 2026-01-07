@@ -773,6 +773,8 @@ def show_client_detail():
     # Sección de configuración de actividades y frecuencias (solo en desarrollo)
     if not is_read_only_mode():
         show_client_activities_section(client_id)
+    else:
+        show_client_activities_readonly(client_id)
         
         # Sección de acciones rápidas
         st.divider()
@@ -2291,6 +2293,22 @@ def show_client_activities_section(client_id):
                     else:
                         st.error("El nombre de la actividad es obligatorio")
         # No mostrar mensaje en modo de solo lectura, simplemente no mostrar la sección
+
+def show_client_activities_readonly(client_id):
+    """Muestra actividades y frecuencias del cliente en modo solo lectura"""
+    st.subheader("Actividades y Frecuencias (Solo Lectura)")
+    activities = get_client_activities(client_id)
+    if activities.empty:
+        st.info("No hay actividades configuradas para este cliente.")
+        return
+    rows = []
+    for _, activity in activities.iterrows():
+        rows.append({
+            'Actividad': activity.get('activity_name', ''),
+            'Frecuencia': activity.get('frequency_name', '')
+        })
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 # ========== FUNCIONES DE MODAL DE EDICIÓN ==========
 
