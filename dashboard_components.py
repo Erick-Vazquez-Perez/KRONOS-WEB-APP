@@ -75,6 +75,57 @@ def get_tomorrow_oc_clients(country_filter=None):
     
     return df
 
+def get_oc_clients_by_day(target_date, country_filter=None):
+    """Obtiene clientes con fecha de Envío OC para un día específico, con filtro opcional de país"""
+    if country_filter:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 1
+        AND date(cd.date) = ?
+        AND c.pais = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'), country_filter))
+    else:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 1
+        AND date(cd.date) = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'),))
+    return df
+
+def get_albaranado_clients_by_day(target_date, country_filter=None):
+    """Obtiene clientes con fecha de Albaranado para un día específico (día del mes actual), con filtro opcional de país"""
+    # Construir query con filtro de país opcional
+    if country_filter:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 2
+        AND date(cd.date) = ?
+        AND c.pais = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'), country_filter))
+    else:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 2
+        AND date(cd.date) = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'),))
+    return df
+
 def get_delivery_anomalies(country_filter=None):
     """Obtiene clientes donde la fecha de albaranado es mayor que la de entrega - solo del mes actual con filtro por país"""
     
@@ -424,20 +475,36 @@ def show_dashboard():
         pass
     
     # ========== TABLAS DE ALERTAS (PRIMERA SECCIÓN) ==========
-    
+    # Selector de fecha común para ambas tablas (limitado al mes corriente)
+    today = datetime.now().date()
+    current_year = today.year
+    current_month = today.month
+    last_day = calendar.monthrange(current_year, current_month)[1]
+
+    sel_col, _spacer = st.columns([1, 10])
+    with sel_col:
+        selected_date = st.date_input(
+            "Seleccionar fecha:",
+            value=today,
+            min_value=date(current_year, current_month, 1),
+            max_value=date(current_year, current_month, last_day),
+            key="dashboard_common_date_selector",
+            format="DD/MM/YYYY"
+        )
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.subheader("Fechas OC de Mañana")
+        st.subheader("Órdenes de Compra")
         
-        # Obtener clientes con fecha OC de mañana
-        tomorrow_oc_clients = get_tomorrow_oc_clients(dashboard_country_filter)
+        # Obtener clientes con fecha OC en la fecha seleccionada
+        oc_clients = get_oc_clients_by_day(selected_date, dashboard_country_filter)
         
-        if not tomorrow_oc_clients.empty:
-            st.info(f"**{len(tomorrow_oc_clients)} clientes** tienen fecha OC mañana")
+        if not oc_clients.empty:
+            st.info(f"**{len(oc_clients)} clientes** con fecha OC el {selected_date.strftime('%d/%m/%Y')}")
             
             # Mostrar la tabla de clientes
-            display_df = tomorrow_oc_clients.copy()
+            display_df = oc_clients.copy()
             display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%d/%m/%Y')
             display_df = display_df.rename(columns={
                 'name': 'Cliente',
@@ -463,141 +530,41 @@ def show_dashboard():
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
             country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
-            st.success(f"No hay fechas OC programadas para mañana{country_text}")
+            st.success(f"No hay órdenes de compra para {selected_date.strftime('%d/%m/%Y')}{country_text}")
     
     with col2:
-        anomaly_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
-        st.subheader(f"Anomalías y Alertas del Mes{anomaly_suffix}")
-        
-        # Obtener el mes y año actual
-        current_date = datetime.now()
-        current_year = current_date.year
-        current_month = current_date.month
-        current_month_name = current_date.strftime('%B')
-        
-        # Obtener anomalías completas
-        anomalies = get_comprehensive_anomalies(current_year, current_month, dashboard_country_filter)
-        
-        # Contar total de anomalías (sin incluir delivery_anomalies)
-        total_anomalies = (
-            len(anomalies['incomplete_week_anomalies']) +
-            len(anomalies['holiday_anomalies'])
-        )
-        
-        if total_anomalies > 0:
-            
-            # Crear tabs para diferentes tipos de anomalías
-            tab1, tab2, tab3 = st.tabs([
-                "Semanas incompletas", 
-                "Días festivos",
-                "Resumen"
-            ])
-            
-            with tab1:
-                incomplete_anomalies = anomalies['incomplete_week_anomalies']
-                if not incomplete_anomalies.empty:
-                    # Mostrar información sobre el mes
-                    week_info = get_incomplete_weeks_info(current_year, current_month)
-                    
-                    if week_info['affected_weekdays']:
-                        st.info(f"**{current_month_name}** tiene semanas incompletas que afectan: {', '.join(week_info['affected_weekdays'])}")
-                    
-                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-                    st.warning(f"**{len(incomplete_anomalies)} clientes**{country_info} pueden verse afectados por semanas incompletas")
-                    
-                    display_df = incomplete_anomalies.copy()
-                    display_df['fecha_albaranado'] = pd.to_datetime(display_df['fecha_albaranado']).dt.strftime('%d/%m/%Y')
-                    display_df = display_df.rename(columns={
-                        'name': 'Cliente',
-                        'codigo_ag': 'Cód. AG',
-                        'codigo_we': 'Cód. WE',
-                        'csr': 'CSR',
-                        'calendario_sap_full': 'Calendario SAP',
-                        'frequency_name': 'Frecuencia',
-                        'fecha_albaranado': 'Fecha Albaranado',
-                        'weekday_from_frequency': 'Día Afectado',
-                        'reason': 'Motivo'
-                    })
-                    
-                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Calendario SAP', 'Fecha Albaranado', 'Día Afectado', 'Motivo']
-                    display_df = display_df[key_columns]
-                    
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
-                else:
-                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-                    st.success(f"No hay clientes{country_info} afectados por semanas incompletas")
-            
-            # Tab 2: Anomalías por días festivos
-            with tab2:
-                holiday_anomalies = anomalies['holiday_anomalies']
-                if not holiday_anomalies.empty:
-                    # Mostrar festivos del mes
-                    holidays = get_holidays_for_month(current_year, current_month)
-                    if holidays:
-                        holiday_text = ", ".join([f"{h[0].strftime('%d/%m')} ({h[1]})" for h in holidays])
-                        st.info(f"**Festivos en {current_month_name}:** {holiday_text}")
-                    
-                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-                    st.warning(f"**{len(holiday_anomalies)} clientes**{country_info} con albaranado en días festivos")
-                    
-                    display_df = holiday_anomalies.copy()
-                    display_df['fecha_albaranado'] = pd.to_datetime(display_df['fecha_albaranado']).dt.strftime('%d/%m/%Y')
-                    display_df = display_df.rename(columns={
-                        'name': 'Cliente',
-                        'codigo_ag': 'Cód. AG',
-                        'codigo_we': 'Cód. WE',
-                        'csr': 'CSR',
-                        'calendario_sap_full': 'Calendario SAP',
-                        'fecha_albaranado': 'Fecha Albaranado',
-                        'holiday_description': 'Festivo',
-                        'reason': 'Motivo'
-                    })
-                    
-                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'Calendario SAP', 'Fecha Albaranado', 'Festivo', 'Motivo']
-                    display_df = display_df[key_columns]
-                    
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
-                else:
-                    country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-                    st.success(f"No hay clientes{country_info} con albaranado en días festivos")
-            
-            # Tab 3: Resumen
-            with tab3:
-                col_a, col_b = st.columns(2)
-                
-                with col_a:
-                    st.metric(
-                        "Semanas incompletas",
-                        len(anomalies['incomplete_week_anomalies']),
-                        delta=None
-                    )
-                
-                with col_b:
-                    st.metric(
-                        "Días festivos",
-                        len(anomalies['holiday_anomalies']),
-                        delta=None
-                    )
-                
-                st.markdown(f"**Total de clientes únicos afectados:** {anomalies['total_affected_clients']}")
-                
+        st.subheader("Albaranes")
+
+        # Obtener clientes con albaranado en el día seleccionado
+        albaranado_clients = get_albaranado_clients_by_day(selected_date, dashboard_country_filter)
+
+        if not albaranado_clients.empty:
+            st.info(f"**{len(albaranado_clients)} clientes** con albaranado el {selected_date.strftime('%d/%m/%Y')}")
+
+            display_df = albaranado_clients.copy()
+            display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%d/%m/%Y')
+            display_df = display_df.rename(columns={
+                'name': 'Cliente',
+                'codigo_ag': 'Cód. AG',
+                'codigo_we': 'Cód. WE',
+                'csr': 'CSR',
+                'vendedor': 'Vendedor',
+                'calendario_sap': 'Cal. SAP',
+                'date': 'Fecha Albaranado',
+                'pais': 'País'
+            })
+
+            # Seleccionar columnas clave para mostrar
+            if dashboard_country_filter:
+                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha Albaranado']
+            else:
+                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'País', 'Fecha Albaranado']
+
+            display_df = display_df[key_columns]
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
-            country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-            st.success(f"No se detectaron anomalías{country_info} para {current_month_name} {current_year}")
-        
-        # Botón para gestión de festivos (solo en desarrollo)
-        from config import is_development
-        if is_development():
-            with st.expander("Configuración de Festivos y Análisis"):
-                from holiday_manager import show_current_month_analysis, manage_holidays_interface
-                
-                tab_analysis, tab_config = st.tabs(["Análisis del Mes", "Gestionar Festivos"])
-                
-                with tab_analysis:
-                    show_current_month_analysis()
-                
-                with tab_config:
-                    manage_holidays_interface()
+            country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
+            st.success(f"No hay albaranes para {selected_date.strftime('%d/%m/%Y')}{country_text}")
     
     st.markdown("---")
     
@@ -634,7 +601,7 @@ def show_dashboard():
         oc_total = metrics.get('Fecha Envío OC', {}).get('total', 0)
         oc_clientes = metrics.get('Fecha Envío OC', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
-            "Fechas OC", 
+            "Fechas de envío OC", 
             str(oc_total), 
             f"{oc_clientes} clientes",
             "#1f77b4"
@@ -644,7 +611,7 @@ def show_dashboard():
         alb_total = metrics.get('Albaranado', {}).get('total', 0)
         alb_clientes = metrics.get('Albaranado', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
-            "Albaranados", 
+            "Fechas de Albaranado", 
             str(alb_total), 
             f"{alb_clientes} clientes",
             "#ff7f0e"
@@ -654,7 +621,7 @@ def show_dashboard():
         ent_total = metrics.get('Fecha Entrega', {}).get('total', 0)
         ent_clientes = metrics.get('Fecha Entrega', {}).get('clientes', 0)
         st.markdown(get_metric_card_html(
-            "Entregas", 
+            "Fechas de Entrega", 
             str(ent_total), 
             f"{ent_clientes} clientes",
             "#2ca02c"
@@ -670,23 +637,32 @@ def show_dashboard():
     col_year, col_month = st.columns(2)
     
     with col_year:
+        year_options = [2024, 2025, 2026]
+        try:
+            default_year_index = year_options.index(datetime.now().year)
+        except ValueError:
+            default_year_index = len(year_options) - 1
         chart_year = st.selectbox(
             "Seleccionar Año:",
-            options=[2024, 2025, 2026],
-            index=1,  # 2025 por defecto
+            options=year_options,
+            index=default_year_index,
             key="chart_year_selector"
         )
     
     with col_month:
+        spanish_months = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ]
         chart_month = st.selectbox(
             "Seleccionar Mes:",
             options=list(range(1, 13)),
-            format_func=lambda x: calendar.month_name[x],
+            format_func=lambda x: spanish_months[x - 1],
             index=datetime.now().month - 1,  # Mes actual por defecto
             key="chart_month_selector"
         )
     
-    chart_month_name = calendar.month_name[chart_month]
+    chart_month_name = spanish_months[chart_month - 1]
     
     # Determinar si el mes seleccionado es pasado, presente o futuro
     current_date = datetime.now()

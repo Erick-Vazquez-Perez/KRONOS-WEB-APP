@@ -33,7 +33,7 @@ def show_clients_gallery():
     # Mostrar filtro de país activo si aplica
     if has_country_filter():
         country_filter = get_user_country_filter()
-        st.info(f"🌍 Vista filtrada: Solo clientes de **{country_filter}**")
+        st.info(f"Vista filtrada: Solo clientes de **{country_filter}**")
     
     # Si se está mostrando el detalle del cliente
     if st.session_state.get('show_client_detail', False) and st.session_state.get('selected_client'):
