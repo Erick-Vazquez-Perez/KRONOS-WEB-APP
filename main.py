@@ -124,17 +124,6 @@ def main():
         except ImportError as e:
             st.error(f"Error cargando módulo de generación de fechas múltiples: {e}")
             st.info("Verifica que todos los módulos estén disponibles.")
-    elif page == "Cumplimiento OC":
-        try:
-            from compliance_module import show_compliance_module
-            show_compliance_module()
-        except ImportError as e:
-            st.error(f"Error cargando módulo de cumplimiento: {e}")
-            st.info("Verifica que el módulo compliance_module.py esté disponible.")
-    elif page == "Rendimiento Sistema" and not is_read_only_mode():
-        show_performance_dashboard()
-    elif is_read_only_mode() and page in ["Agregar Cliente", "Administrar Frecuencias", "Rendimiento Sistema"]:
-        st.error("Esta función no está disponible en modo producción")
 
 def initialize_session_state():
     """Inicializa los estados de sesión necesarios"""
