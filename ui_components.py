@@ -24,6 +24,34 @@ from werfen_styles import get_client_card_html, get_metric_card_html, get_calend
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
 import sqlite3
 
+FILTER_STATE_KEYS = [
+    "client_search",
+    "csr_filter",
+    "vendedor_filter",
+    "tipo_filter",
+    "region_filter",
+    "calendario_sap_filter",
+    "pais_filter",
+    "estado_filter",
+    "ciudad_filter",
+    "sort_filter",
+    "view_mode",
+    "preview_year",
+]
+
+def snapshot_client_filters():
+    """Guarda el estado actual de los filtros de clientes"""
+    st.session_state["client_filters_snapshot"] = {
+        key: st.session_state.get(key) for key in FILTER_STATE_KEYS if key in st.session_state
+    }
+
+
+def restore_client_filters_from_snapshot():
+    """Restaura los filtros guardados al volver a la galería"""
+    snapshot = st.session_state.get("client_filters_snapshot")
+    if snapshot:
+        st.session_state.update(snapshot)
+
 # ========== FUNCIONES DE GALERÍA Y NAVEGACIÓN ==========
 
 def show_clients_gallery():
@@ -65,6 +93,16 @@ def show_clients_gallery():
             st.write(f"DEBUG: Error en consulta directa: {e}")
         
         return
+
+    if st.session_state.get("restore_filters_on_gallery"):
+        restore_client_filters_from_snapshot()
+        st.session_state["restore_filters_on_gallery"] = False
+
+    st.session_state.setdefault("client_search", "")
+
+    def _clear_client_search():
+        """Reset de búsqueda de clientes"""
+        st.session_state["client_search"] = ""
     
     # Fila superior: búsqueda de texto
     col1, col2 = st.columns([3, 1])
@@ -79,79 +117,54 @@ def show_clients_gallery():
     
     with col2:
         # Botón para limpiar búsqueda
-        if st.button("Limpiar", key="clear_search", help="Limpiar búsqueda"):
-            # Eliminar la key del session_state para que se reinicialice
-            if "client_search" in st.session_state:
-                del st.session_state["client_search"]
-            st.rerun()
+        st.button(
+            "Limpiar",
+            key="clear_search",
+            help="Limpiar búsqueda",
+            on_click=_clear_client_search
+        )
     
     # Fila inferior: filtros adicionales
-    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([2, 2, 2, 2, 2, 2, 2, 1])
+    # Primera fila de filtros
+    row1_col1, row1_col2, row1_col3, row1_col4, row1_col5, row1_col6, _row1_spacer = st.columns([2, 2, 2, 2, 2, 2, 1])
 
-    # Importante: limpiar estado ANTES de instanciar los widgets
-    with col8:
-        st.write("")  # Espacio para alinear el botón
-        if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
-            st.session_state["csr_filter"] = "Todos"
-            st.session_state["vendedor_filter"] = "Todos"
-            st.session_state["tipo_filter"] = "Todos"
-            st.session_state["region_filter"] = "Todos"
-            st.session_state["calendario_sap_filter"] = "Todos"
-
-            if not has_country_filter():
-                st.session_state["pais_filter"] = "Todos"
-            else:
-                if "pais_filter" in st.session_state:
-                    del st.session_state["pais_filter"]
-
-            st.session_state["sort_filter"] = "Nombre A-Z"
-
-            # Mantener el botón de búsqueda "Limpiar" como el encargado de borrar texto
-            # (evita pelear con el widget ya instanciado arriba)
-            st.rerun()
-    
-    with col1:
-        # Filtro por CSR
+    with row1_col1:
         csr_options = ['Todos'] + sorted([csr for csr in clients['csr'].dropna().unique() if csr])
         selected_csr = st.selectbox(
             "Filtrar por CSR:",
             csr_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="csr_filter"
         )
-    
-    with col2:
-        # Filtro por vendedor
+
+    with row1_col2:
         vendedor_options = ['Todos'] + sorted([vendedor for vendedor in clients['vendedor'].dropna().unique() if vendedor])
         selected_vendedor = st.selectbox(
             "Filtrar por Vendedor:",
             vendedor_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="vendedor_filter"
         )
-    
-    with col3:
-        # Filtro por tipo de cliente
+
+    with row1_col3:
         tipo_options = ['Todos'] + get_tipos_cliente()
         selected_tipo = st.selectbox(
             "Filtrar por Tipo:",
             tipo_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="tipo_filter"
         )
-    
-    with col4:
-        # Filtro por región
+
+    with row1_col4:
         region_options = ['Todos'] + get_regiones()
         selected_region = st.selectbox(
             "Filtrar por Región:",
             region_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="region_filter"
         )
-    
-    with col5:
-        # Filtro por calendario SAP
+
+    with row1_col5:
         if 'calendario_sap' in clients.columns:
             calendario_sap_values = (
                 clients['calendario_sap']
@@ -170,11 +183,8 @@ def show_clients_gallery():
             key="calendario_sap_filter"
         )
 
-    with col6:
-        # Filtro por país
+    with row1_col6:
         pais_options = ['Todos'] + get_paises()
-        
-        # Si el usuario tiene un filtro de país fijo, deshabilitar el selector
         if has_country_filter():
             country_filter = get_user_country_filter()
             selected_pais = st.selectbox(
@@ -189,19 +199,61 @@ def show_clients_gallery():
             selected_pais = st.selectbox(
                 "Filtrar por País:",
                 pais_options,
-                index=0,  # Siempre empezar con "Todos"
+                index=0,
                 key="pais_filter"
             )
 
-    with col7:
-        # Ordenar por
+    # Segunda fila de filtros
+    row2_col1, row2_col2, row2_col3, row2_col4, row2_col5 = st.columns([2, 2, 2, 2, 1])
+
+    with row2_col1:
+        estado_options = ['Todos'] + sorted([e for e in clients.get('estado', pd.Series()).fillna('').astype(str).unique() if e])
+        selected_estado = st.selectbox(
+            "Filtrar por Estado:",
+            estado_options,
+            index=0,
+            key="estado_filter"
+        )
+
+    with row2_col2:
+        ciudad_options = ['Todos'] + sorted([c for c in clients.get('ciudad', pd.Series()).fillna('').astype(str).unique() if c])
+        selected_ciudad = st.selectbox(
+            "Filtrar por Ciudad:",
+            ciudad_options,
+            index=0,
+            key="ciudad_filter"
+        )
+
+    with row2_col3:
         sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región', 'País']
         sort_by = st.selectbox(
             "Ordenar por:",
             sort_options,
-            index=0,  # Siempre empezar con "Nombre A-Z"
+            index=0,
             key="sort_filter"
         )
+
+    with row2_col5:
+        st.write("")
+        if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
+            st.session_state["csr_filter"] = "Todos"
+            st.session_state["vendedor_filter"] = "Todos"
+            st.session_state["tipo_filter"] = "Todos"
+            st.session_state["region_filter"] = "Todos"
+            st.session_state["calendario_sap_filter"] = "Todos"
+            st.session_state["estado_filter"] = "Todos"
+            st.session_state["ciudad_filter"] = "Todos"
+
+            if not has_country_filter():
+                st.session_state["pais_filter"] = "Todos"
+            else:
+                if "pais_filter" in st.session_state:
+                    del st.session_state["pais_filter"]
+
+            st.session_state["sort_filter"] = "Nombre A-Z"
+
+            # Mantener el botón de búsqueda "Limpiar" como el encargado de borrar texto
+            st.rerun()
 
 
     
@@ -210,14 +262,18 @@ def show_clients_gallery():
     
     # Aplicar filtro de texto (verificar que no sea None o vacío)
     if search_term and search_term.strip():
+        term = search_term
         filtered_clients = filtered_clients[
-            filtered_clients['name'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['codigo_ag'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['csr'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['vendedor'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['tipo_cliente'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['region'].str.contains(search_term, case=False, na=False) |
-            (filtered_clients['pais'].fillna('').str.contains(search_term, case=False, na=False))
+            filtered_clients['name'].str.contains(term, case=False, na=False) |
+            filtered_clients['codigo_ag'].str.contains(term, case=False, na=False) |
+            filtered_clients['csr'].str.contains(term, case=False, na=False) |
+            filtered_clients['vendedor'].str.contains(term, case=False, na=False) |
+            filtered_clients['tipo_cliente'].str.contains(term, case=False, na=False) |
+            filtered_clients['region'].str.contains(term, case=False, na=False) |
+            (filtered_clients['pais'].fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('estado', pd.Series()).fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('ciudad', pd.Series()).fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('numero_tarea_sap', pd.Series()).astype(str).str.contains(term, case=False, na=False))
         ]
     
     # Aplicar filtro de CSR
@@ -250,6 +306,12 @@ def show_clients_gallery():
     if not has_country_filter():
         if selected_pais and selected_pais != 'Todos':
             filtered_clients = filtered_clients[filtered_clients['pais'] == selected_pais]
+
+    if selected_estado and selected_estado != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients.get('estado', '').fillna('') == selected_estado]
+
+    if selected_ciudad and selected_ciudad != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients.get('ciudad', '').fillna('') == selected_ciudad]
     
     # Aplicar ordenamiento
     if sort_by == 'Nombre A-Z':
@@ -308,6 +370,10 @@ def show_clients_gallery():
             active_filters.append(f"Calendario SAP: {selected_calendario_sap}")
         if selected_pais != 'Todos':
             active_filters.append(f"País: {selected_pais}")
+        if selected_estado != 'Todos':
+            active_filters.append(f"Estado: {selected_estado}")
+        if selected_ciudad != 'Todos':
+            active_filters.append(f"Ciudad: {selected_ciudad}")
         if sort_by != 'Nombre A-Z':
             active_filters.append(f"Orden: {sort_by}")
         
@@ -319,19 +385,27 @@ def show_clients_gallery():
     # Selector de vista + año (para preview)
     col1, col2, _spacer = st.columns([1, 1, 2])
     with col1:
+        view_options = ["Galería", "Lista"]
+        default_view_mode = st.session_state.get("view_mode", "Galería")
+        if default_view_mode not in view_options:
+            default_view_mode = "Galería"
         view_mode = st.selectbox(
             "Vista:",
-            ["Galería", "Lista"],
+            view_options,
+            index=view_options.index(default_view_mode),
             key="view_mode",
             help="Selecciona cómo mostrar los clientes"
         )
     with col2:
         current_year = datetime.now().year
         year_options = list(range(current_year - 2, current_year + 6))
+        default_preview_year = st.session_state.get("preview_year", current_year)
+        if default_preview_year not in year_options:
+            default_preview_year = current_year
         preview_year = st.selectbox(
             "Año:",
             year_options,
-            index=year_options.index(current_year),
+            index=year_options.index(default_preview_year),
             key="preview_year",
             help="Año usado para el preview de fechas por cliente"
         )
@@ -471,6 +545,8 @@ def show_clients_gallery_view(clients_to_show, preview_year):
                                 del st.session_state[key]
                         
                         # Establecer nuevo cliente
+                        snapshot_client_filters()
+                        st.session_state["restore_filters_on_gallery"] = True
                         st.session_state.selected_client = int(client['id'])
                         st.session_state.show_client_detail = True
                         st.rerun()
@@ -492,6 +568,8 @@ def show_clients_list_view(clients_to_show, preview_year):
             'Vendedor': client['vendedor'] or 'N/A',
             'Tipo Cliente': client.get('tipo_cliente', 'N/A') or 'N/A',
             'Región': client.get('region', 'N/A') or 'N/A',
+            'Estado': client.get('estado', '') or 'N/A',
+            'Ciudad': client.get('ciudad', '') or 'N/A',
             'ID': client['id']
         })
     
@@ -520,6 +598,8 @@ def show_clients_list_view(clients_to_show, preview_year):
             
             with col7:
                 st.write(f"Región: {client_data['Región']}")
+                st.write(f"Estado: {client_data['Estado']}")
+                st.write(f"Ciudad: {client_data['Ciudad']}")
             
             with col8:
                 if st.button("Ver", key=f"list_detail_{client_data['ID']}"):
@@ -530,6 +610,8 @@ def show_clients_list_view(clients_to_show, preview_year):
                             del st.session_state[key]
                     
                     # Establecer nuevo cliente
+                    snapshot_client_filters()
+                    st.session_state["restore_filters_on_gallery"] = True
                     st.session_state.selected_client = int(client_data['ID'])
                     st.session_state.show_client_detail = True
                     st.rerun()
@@ -619,14 +701,17 @@ def show_client_detail():
     with col3:
         st.markdown(f"""
         **Vendedor:** {client['vendedor'] or 'N/A'}  
-        **Calendario SAP:** {client['calendario_sap'] or 'N/A'}
+        **Calendario SAP:** {client['calendario_sap'] or 'N/A'}  
+        **Número tarea SAP:** {client.get('numero_tarea_sap') or 'N/A'}
         """)
     
     with col4:
         st.markdown(f"""
         **Tipo Cliente:** {client.get('tipo_cliente', 'N/A')}  
         **Región:** {client.get('region', 'N/A')}  
-        **País:** {client.get('pais', 'N/A')}
+        **País:** {client.get('pais', 'N/A')}  
+        **Estado:** {client.get('estado') or 'N/A'}  
+        **Ciudad:** {client.get('ciudad') or 'N/A'}
         """)
     
     st.divider()
@@ -2478,6 +2563,20 @@ def show_client_data_tab_improved(client):
             return client.get(field, '') or ''
         else:
             return client[field] if field in client and client[field] is not None else ''
+
+    def safe_int(field, default=0):
+        try:
+            return int(safe_get(field) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def original_int(data, field, default=0):
+        try:
+            if hasattr(data, 'get'):
+                return int(data.get(field, default) or default)
+            return int(data[field] if field in data and data[field] not in (None, '') else default)
+        except (TypeError, ValueError):
+            return default
     
     # Verificar si hay un mensaje de éxito en session_state
     if st.session_state.get(f'{key_prefix}_update_success', False):
@@ -2504,6 +2603,13 @@ def show_client_data_tab_improved(client):
     col1, col2, col3, col4 = st.columns(4)
     
     readonly = is_read_only_mode()
+    if current_client is client:
+        numero_tarea_sap_value = safe_int('numero_tarea_sap', 0)
+    else:
+        try:
+            numero_tarea_sap_value = int(current_client.get('numero_tarea_sap', 0) or 0)
+        except (TypeError, ValueError):
+            numero_tarea_sap_value = 0
     
     with col1:
         name = st.text_input(
@@ -2550,6 +2656,15 @@ def show_client_data_tab_improved(client):
             value=safe_get('calendario_sap') if current_client is client else current_client.get('calendario_sap', ''),
             key=f"{key_prefix}_calendario_sap_input",
             help="Edita el calendario SAP" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        numero_tarea_sap = st.number_input(
+            "Número de tarea SAP",
+            min_value=0,
+            step=1,
+            value=numero_tarea_sap_value,
+            key=f"{key_prefix}_numero_tarea_sap_input",
+            help="Número de tarea SAP del cliente",
             disabled=readonly
         )
     
@@ -2602,11 +2717,28 @@ def show_client_data_tab_improved(client):
             help="Selecciona el país" if not readonly else "Solo lectura en producción",
             disabled=readonly
         )
+        estado = st.text_input(
+            "Estado",
+            value=safe_get('estado') if current_client is client else current_client.get('estado', ''),
+            key=f"{key_prefix}_estado_input",
+            help="Estado o provincia del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        ciudad = st.text_input(
+            "Ciudad",
+            value=safe_get('ciudad') if current_client is client else current_client.get('ciudad', ''),
+            key=f"{key_prefix}_ciudad_input",
+            help="Ciudad del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
     
     # Verificar si hay cambios (solo si no estamos en modo readonly)
     has_changes = False
     if not readonly:
         original_data = current_client if current_client is not client else client
+        original_num_tarea = original_int(original_data, 'numero_tarea_sap', 0)
+        original_estado = original_data.get('estado', '') if hasattr(original_data, 'get') else original_data.get('estado', '')
+        original_ciudad = original_data.get('ciudad', '') if hasattr(original_data, 'get') else original_data.get('ciudad', '')
         has_changes = (
             name != (original_data.get('name', '') if hasattr(original_data, 'get') else original_data['name']) or
             codigo_ag != (original_data.get('codigo_ag', '') or '' if hasattr(original_data, 'get') else original_data['codigo_ag'] or '') or
@@ -2614,6 +2746,9 @@ def show_client_data_tab_improved(client):
             csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
             vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
             calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '') or
+            numero_tarea_sap != original_num_tarea or
+            estado != (original_estado or '') or
+            ciudad != (original_ciudad or '') or
             tipo_cliente != (original_data.get('tipo_cliente', 'Otro') if hasattr(original_data, 'get') else original_data.get('tipo_cliente', 'Otro')) or
             region != (original_data.get('region', 'Otro') if hasattr(original_data, 'get') else original_data.get('region', 'Otro')) or
             pais != (original_data.get('pais', 'Colombia') if hasattr(original_data, 'get') else original_data.get('pais', 'Colombia'))
@@ -2631,6 +2766,10 @@ def show_client_data_tab_improved(client):
                     # Manejar valores por defecto para los nuevos campos
                     if field in ['tipo_cliente', 'region'] and not value:
                         return 'Otro'
+                    if field == 'numero_tarea_sap' and value in (None, ''):
+                        return 0
+                    if field in ['estado', 'ciudad'] and value in (None, ''):
+                        return ''
                     return value or ''
                 else:
                     value = original_data[field] if field in original_data and original_data[field] is not None else ''
@@ -2639,6 +2778,10 @@ def show_client_data_tab_improved(client):
                         return 'Otro'
                     if field == 'pais' and not value:
                         return 'Colombia'
+                    if field == 'numero_tarea_sap' and value in (None, ''):
+                        return 0
+                    if field in ['estado', 'ciudad'] and value in (None, ''):
+                        return ''
                     return value
             
             if name != get_original_value('name'):
@@ -2653,6 +2796,12 @@ def show_client_data_tab_improved(client):
                 st.write(f"- **Vendedor:** '{get_original_value('vendedor')}' -> '{vendedor}'")
             if calendario_sap != get_original_value('calendario_sap'):
                 st.write(f"- **Calendario SAP:** '{get_original_value('calendario_sap')}' -> '{calendario_sap}'")
+            if numero_tarea_sap != int(get_original_value('numero_tarea_sap')):
+                st.write(f"- **Número tarea SAP:** '{get_original_value('numero_tarea_sap')}' -> '{numero_tarea_sap}'")
+            if estado != get_original_value('estado'):
+                st.write(f"- **Estado:** '{get_original_value('estado')}' -> '{estado}'")
+            if ciudad != get_original_value('ciudad'):
+                st.write(f"- **Ciudad:** '{get_original_value('ciudad')}' -> '{ciudad}'")
             if tipo_cliente != get_original_value('tipo_cliente'):
                 st.write(f"- **Tipo Cliente:** '{get_original_value('tipo_cliente')}' -> '{tipo_cliente}'")
             if region != get_original_value('region'):
@@ -2673,7 +2822,21 @@ def show_client_data_tab_improved(client):
                     try:
                         with st.spinner("Actualizando cliente..."):
                             # Realizar la actualización
-                            success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais)
+                            success = update_client(
+                                client_id,
+                                name,
+                                codigo_ag,
+                                codigo_we,
+                                csr,
+                                vendedor,
+                                calendario_sap,
+                                tipo_cliente,
+                                region,
+                                pais,
+                                numero_tarea_sap,
+                                estado,
+                                ciudad
+                            )
                         
                         if success:
                             # Establecer flags para mostrar mensaje de éxito y recargar datos
@@ -2685,7 +2848,8 @@ def show_client_data_tab_improved(client):
                                          f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
                                          f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
                                          f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input",
-                                         f"{key_prefix}_pais_input"]
+                                         f"{key_prefix}_pais_input", f"{key_prefix}_numero_tarea_sap_input",
+                                         f"{key_prefix}_estado_input", f"{key_prefix}_ciudad_input"]
                             
                             for key in input_keys:
                                 if key in st.session_state:
@@ -2712,7 +2876,9 @@ def show_client_data_tab_improved(client):
                 input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
                              f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
                              f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
-                             f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input"]
+                             f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input",
+                             f"{key_prefix}_numero_tarea_sap_input", f"{key_prefix}_estado_input",
+                             f"{key_prefix}_ciudad_input"]
                 
                 for key in input_keys:
                     if key in st.session_state:
@@ -2959,6 +3125,13 @@ def show_add_client():
                 disabled=True,
                 help="Este campo se establece automáticamente basado en la frecuencia seleccionada para la actividad 'Albaranado'"
             )
+            numero_tarea_sap = st.number_input(
+                "Número de tarea SAP",
+                min_value=0,
+                step=1,
+                value=0,
+                help="Identificador de tarea SAP para el cliente"
+            )
         
         with col4:
             # Campos de categorización
@@ -2982,6 +3155,8 @@ def show_add_client():
                 paises,
                 index=paises.index("Colombia")
             )
+            estado = st.text_input("Estado", placeholder="Estado/Provincia")
+            ciudad = st.text_input("Ciudad", placeholder="Ciudad")
         
         st.divider()
         st.subheader("Configuración de Actividades")
@@ -3073,7 +3248,20 @@ def show_add_client():
             if name.strip():
                 with st.spinner("Creando cliente y configurando actividades..."):
                     # Crear cliente usando el código SAP automático de Albaranado
-                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, albaranado_sap_code, tipo_cliente, region, pais)
+                    client_id = add_client(
+                        name.strip(),
+                        codigo_ag,
+                        codigo_we,
+                        csr,
+                        vendedor,
+                        albaranado_sap_code,
+                        tipo_cliente,
+                        region,
+                        pais,
+                        numero_tarea_sap,
+                        estado,
+                        ciudad
+                    )
                     
                     if client_id:
                         # Agregar actividades configuradas

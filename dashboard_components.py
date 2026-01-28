@@ -240,8 +240,8 @@ def get_delivery_anomalies(country_filter=None):
     
     return df
 
-def get_monthly_delivery_data(year, month, country_filter=None):
-    """Obtiene los datos de fechas de Entrega para un mes específico con filtro por país"""
+def get_monthly_activity_data(year, month, activity_id, country_filter=None):
+    """Obtiene los datos de fechas por actividad para un mes específico con filtro por país"""
     
     # Crear las fechas de inicio y fin del mes
     start_date = date(year, month, 1)
@@ -258,13 +258,13 @@ def get_monthly_delivery_data(year, month, country_filter=None):
             COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_id = 3
+        WHERE cd.activity_id = ?
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         AND c.pais = ?
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
         """
-        df = _cached_query_df(query, (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), country_filter))
+        df = _cached_query_df(query, (activity_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), country_filter))
     else:
         query = """
         SELECT 
@@ -272,12 +272,12 @@ def get_monthly_delivery_data(year, month, country_filter=None):
             COUNT(*) as cantidad_entregas
         FROM calculated_dates cd
         JOIN clients c ON c.id = cd.client_id
-        WHERE cd.activity_id = 3
+        WHERE cd.activity_id = ?
         AND date(cd.date) >= ? AND date(cd.date) <= ?
         GROUP BY date(cd.date)
         ORDER BY date(cd.date)
         """
-        df = _cached_query_df(query, (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        df = _cached_query_df(query, (activity_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     
     # Convertir fecha a datetime para mejor manejo
     if not df.empty:
@@ -341,21 +341,21 @@ def get_total_clients_count(country_filter=None):
     total = result['total_clientes'].iloc[0] if not result.empty else 0
     return total
 
-def create_delivery_line_chart(monthly_data, selected_month_name):
-    """Crea el gráfico de línea para las fechas de Entrega del mes"""
+def create_activity_line_chart(monthly_data, selected_month_name, activity_label):
+    """Crea el gráfico de línea para las fechas de una actividad en el mes"""
     if monthly_data.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text="No hay datos de fechas de Entrega para este mes",
+            text=f"No hay datos de {activity_label} para este mes",
             xref="paper", yref="paper",
             x=0.5, y=0.5, xanchor='center', yanchor='middle',
             showarrow=False,
             font=dict(size=14, color="#666666")
         )
         fig.update_layout(
-            title=f"Fechas de Entrega en {selected_month_name}",
+            title=f"Fechas de {activity_label} en {selected_month_name}",
             xaxis_title="Día del mes",
-            yaxis_title="Cantidad de fechas de Entrega",
+            yaxis_title="Cantidad de fechas",
             height=400,
             showlegend=False
         )
@@ -368,10 +368,10 @@ def create_delivery_line_chart(monthly_data, selected_month_name):
         x=monthly_data['day'],
         y=monthly_data['cantidad_entregas'],
         mode='lines+markers',
-        name='Fechas Entrega',
+        name=f'Fechas {activity_label}',
         line=dict(color='#2ca02c', width=3),
         marker=dict(size=8, color='#2ca02c'),
-        hovertemplate='<b>Día %{x}</b><br>Fechas Entrega: %{y}<extra></extra>'
+        hovertemplate=f'<b>Día %{{x}}</b><br>{activity_label}: %{{y}}<extra></extra>'
     ))
     
     # Área bajo la curva
@@ -388,13 +388,14 @@ def create_delivery_line_chart(monthly_data, selected_month_name):
     fig.update_layout(
         title=" ",
         xaxis_title="Día del mes",
-        yaxis_title="Cantidad de fechas de Entrega",
+        yaxis_title="Cantidad de fechas",
         height=400,
         hovermode='x unified',
         plot_bgcolor='white',
         paper_bgcolor='white',
         font=dict(family="Arial", size=12),
         title_font=dict(size=16, color='#2E4057'),
+        legend=dict(orientation='h', yanchor='top', y=-0.25, xanchor='center', x=0.5),
         xaxis=dict(
             showgrid=True,
             gridcolor='rgba(128,128,128,0.2)',
@@ -633,8 +634,8 @@ def show_dashboard():
     analysis_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
     st.subheader(f"Análisis de Fechas de Entrega por Mes{analysis_suffix}")
     
-    # Selector de año y mes
-    col_year, col_month = st.columns(2)
+    # Selector de año, mes y actividad
+    col_year, col_month, col_activity = st.columns(3)
     
     with col_year:
         year_options = [2024, 2025, 2026]
@@ -661,6 +662,22 @@ def show_dashboard():
             index=datetime.now().month - 1,  # Mes actual por defecto
             key="chart_month_selector"
         )
+
+    with col_activity:
+        activity_options = {
+            'Fechas de Entrega': 3,
+            'Fechas Envío OC': 1,
+            'Albaranados': 2,
+        }
+        activity_labels = list(activity_options.keys())
+        default_activity = 'Fechas de Entrega'
+        activity_label = st.selectbox(
+            "Seleccionar Actividad:",
+            options=activity_labels,
+            index=activity_labels.index(default_activity),
+            key="chart_activity_selector"
+        )
+        activity_id = activity_options[activity_label]
     
     chart_month_name = spanish_months[chart_month - 1]
     
@@ -672,29 +689,29 @@ def show_dashboard():
     country_text = f" ({dashboard_country_display})" if dashboard_country_display else ""
     
     if selected_date < current_month_date:
-        chart_subtitle = f"Fechas de Entrega del mes vencido ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"{activity_label} del mes vencido ({chart_month_name} {chart_year}){country_text}"
     elif selected_date > current_month_date:
-        chart_subtitle = f"Fechas de Entrega del mes próximo ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"{activity_label} del mes próximo ({chart_month_name} {chart_year}){country_text}"
     else:
-        chart_subtitle = f"Fechas de Entrega del mes actual ({chart_month_name} {chart_year}){country_text}"
+        chart_subtitle = f"{activity_label} del mes actual ({chart_month_name} {chart_year}){country_text}"
     
     st.subheader(chart_subtitle)
     
     # Obtener datos del mes seleccionado para la gráfica
-    monthly_data = get_monthly_delivery_data(chart_year, chart_month, dashboard_country_filter)
+    monthly_data = get_monthly_activity_data(chart_year, chart_month, activity_id, dashboard_country_filter)
     
     if not monthly_data.empty:
         total_delivery_month = monthly_data['cantidad_entregas'].sum()
         country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-        st.info(f"**{total_delivery_month} fechas de Entrega** programadas en {chart_month_name} {chart_year}{country_info}")
+        st.info(f"**{total_delivery_month} {activity_label}** programadas en {chart_month_name} {chart_year}{country_info}")
         
         # Mostrar gráfico de línea del mes
-        line_chart = create_delivery_line_chart(monthly_data, chart_month_name)
+        line_chart = create_activity_line_chart(monthly_data, chart_month_name, activity_label)
         st.plotly_chart(line_chart, use_container_width=True)
         
     else:
         country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-        st.success(f"No hay fechas de Entrega programadas para {chart_month_name} {chart_year}{country_info}")
+        st.success(f"No hay {activity_label} programadas para {chart_month_name} {chart_year}{country_info}")
     
     st.markdown("---")
 

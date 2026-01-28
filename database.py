@@ -316,7 +316,13 @@ def create_database_indexes():
         # Índices para la tabla frequency_templates
         "CREATE INDEX IF NOT EXISTS idx_frequency_templates_name ON frequency_templates(name)",
         "CREATE INDEX IF NOT EXISTS idx_frequency_templates_type ON frequency_templates(frequency_type)",
-        "CREATE INDEX IF NOT EXISTS idx_frequency_templates_sap_code ON frequency_templates(calendario_sap_code)"
+        "CREATE INDEX IF NOT EXISTS idx_frequency_templates_sap_code ON frequency_templates(calendario_sap_code)",
+
+        # Índices para el módulo de cumplimiento
+        "CREATE INDEX IF NOT EXISTS idx_compliance_records_upload ON compliance_records(upload_id)",
+        "CREATE INDEX IF NOT EXISTS idx_compliance_records_client ON compliance_records(matched_client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_compliance_records_status ON compliance_records(status)",
+        "CREATE INDEX IF NOT EXISTS idx_compliance_records_dates ON compliance_records(reference_date, expected_date)"
     ]
     
     try:
@@ -487,8 +493,12 @@ def init_database():
             csr TEXT,
             vendedor TEXT,
             calendario_sap TEXT,
+            numero_tarea_sap INTEGER DEFAULT 0,
+            estado TEXT DEFAULT '',
+            ciudad TEXT DEFAULT '',
             tipo_cliente TEXT DEFAULT 'Otro',
             region TEXT DEFAULT 'Otro',
+            pais TEXT DEFAULT 'Colombia',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -525,6 +535,22 @@ def init_database():
     if 'region' not in column_names:
         cursor.execute('ALTER TABLE clients ADD COLUMN region TEXT DEFAULT "Otro"')
         print("Campo region agregado a clients")
+    
+    if 'pais' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN pais TEXT DEFAULT "Colombia"')
+        print("Campo pais agregado a clients")
+
+    if 'numero_tarea_sap' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN numero_tarea_sap INTEGER DEFAULT 0')
+        print("Campo numero_tarea_sap agregado a clients")
+
+    if 'estado' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN estado TEXT DEFAULT ""')
+        print("Campo estado agregado a clients")
+
+    if 'ciudad' not in column_names:
+        cursor.execute('ALTER TABLE clients ADD COLUMN ciudad TEXT DEFAULT ""')
+        print("Campo ciudad agregado a clients")
     
     # Tabla de frecuencias disponibles
     cursor.execute('''
@@ -635,6 +661,48 @@ def init_database():
                 except Exception as e:
                     print(f"Error restaurando datos: {e}")
                     continue
+
+    # Tabla de cargas de cumplimiento (referencia al Excel)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS compliance_uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uploaded_by TEXT,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            original_filename TEXT,
+            file_hash TEXT,
+            row_count INTEGER DEFAULT 0,
+            country_filter TEXT,
+            file_blob BLOB
+        )
+    ''')
+
+    # Tabla de registros de cumplimiento por fila del Excel
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS compliance_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER NOT NULL,
+            sales_document TEXT,
+            reference_date DATE,
+            ag_code TEXT,
+            client_name_excel TEXT,
+            matched_client_id INTEGER,
+            matched_client_name TEXT,
+            match_score REAL,
+            expected_date DATE,
+            activity_id INTEGER,
+            activity_name TEXT,
+            status TEXT DEFAULT 'sin_asignar' CHECK(status IN ('cumple','incumple','sin_asignar')),
+            matched_by TEXT,
+            assigned_manually INTEGER DEFAULT 0,
+            manual_note TEXT,
+            raw_row TEXT,
+            country_filter TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (upload_id) REFERENCES compliance_uploads(id),
+            FOREIGN KEY (matched_client_id) REFERENCES clients(id)
+        )
+    ''')
 
     # Asegurar columna activity_id en calculated_dates (migración no destructiva)
     cursor.execute("PRAGMA table_info(calculated_dates)")
@@ -829,16 +897,16 @@ def get_client_by_id(client_id, use_cache=True):
     finally:
         return_pooled_connection(conn)
 
-def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia'):
+def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia', numero_tarea_sap=0, estado='', ciudad=''):
     """Agrega un nuevo cliente con invalidación de cache"""
     conn = get_pooled_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute('''
-            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais))
+            INSERT INTO clients (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais, numero_tarea_sap, estado, ciudad)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais, numero_tarea_sap, estado, ciudad))
         client_id = cursor.lastrowid
         
         conn.commit()
@@ -856,7 +924,7 @@ def add_client(name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_c
     finally:
         return_pooled_connection(conn)
 
-def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia'):
+def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente='Otro', region='Otro', pais='Colombia', numero_tarea_sap=0, estado='', ciudad=''):
     """Actualiza la información de un cliente con invalidación de cache"""
     conn = get_pooled_connection()
     cursor = conn.cursor()
@@ -878,6 +946,9 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
         print(f"  CSR: '{csr}'")
         print(f"  Vendedor: '{vendedor}'")
         print(f"  Calendario SAP: '{calendario_sap}'")
+        print(f"  Numero Tarea SAP: '{numero_tarea_sap}'")
+        print(f"  Estado: '{estado}'")
+        print(f"  Ciudad: '{ciudad}'")
         print(f"  Tipo Cliente: '{tipo_cliente}'")
         print(f"  Región: '{region}'")
         print(f"  País: '{pais}'")
@@ -885,9 +956,9 @@ def update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendar
         # Realizar la actualización
         cursor.execute('''
             UPDATE clients 
-            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?, tipo_cliente = ?, region = ?, pais = ?
+            SET name = ?, codigo_ag = ?, codigo_we = ?, csr = ?, vendedor = ?, calendario_sap = ?, tipo_cliente = ?, region = ?, pais = ?, numero_tarea_sap = ?, estado = ?, ciudad = ?
             WHERE id = ?
-        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais, client_id))
+        ''', (name, codigo_ag, codigo_we, csr, vendedor, calendario_sap, tipo_cliente, region, pais, numero_tarea_sap, estado, ciudad, client_id))
         
         # Verificar que se actualizó al menos una fila
         if cursor.rowcount == 0:
@@ -1977,3 +2048,206 @@ def save_calculated_dates_by_year(client_id, activity_name, dates_list, year):
         raise e
     finally:
         return_pooled_connection(conn)
+
+
+# === FUNCIONES DEL MÓDULO DE CUMPLIMIENTO ===
+
+def create_compliance_upload(original_filename, file_bytes, row_count, uploaded_by, country_filter=None):
+    """Crea un registro de carga de cumplimiento y guarda el archivo como referencia."""
+    file_hash = hashlib.md5(file_bytes).hexdigest() if file_bytes else None
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO compliance_uploads (original_filename, file_hash, row_count, uploaded_by, country_filter, file_blob)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (original_filename, file_hash, row_count or 0, uploaded_by, country_filter, file_bytes))
+        upload_id = cursor.lastrowid
+        conn.commit()
+        return upload_id
+    except Exception as e:
+        conn.rollback()
+        print(f"Error creando carga de cumplimiento: {e}")
+        return None
+    finally:
+        return_pooled_connection(conn)
+
+
+def save_compliance_records(upload_id, records):
+    """Guarda múltiples registros de cumplimiento en batch."""
+    if not upload_id or not records:
+        return False
+
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("BEGIN TRANSACTION")
+        cursor.executemany('''
+            INSERT INTO compliance_records (
+                upload_id, sales_document, reference_date, ag_code, client_name_excel,
+                matched_client_id, matched_client_name, match_score, expected_date, activity_id,
+                activity_name, status, matched_by, assigned_manually, manual_note, raw_row, country_filter
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [(
+            upload_id,
+            rec.get('sales_document'),
+            rec.get('reference_date'),
+            rec.get('ag_code'),
+            rec.get('client_name_excel'),
+            rec.get('matched_client_id'),
+            rec.get('matched_client_name'),
+            rec.get('match_score'),
+            rec.get('expected_date'),
+            rec.get('activity_id'),
+            rec.get('activity_name'),
+            rec.get('status', 'sin_asignar'),
+            rec.get('matched_by'),
+            rec.get('assigned_manually', 0),
+            rec.get('manual_note'),
+            rec.get('raw_row'),
+            rec.get('country_filter')
+        ) for rec in records])
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error guardando registros de cumplimiento: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def get_compliance_records(upload_id):
+    """Obtiene los registros de cumplimiento de una carga específica."""
+    if not upload_id:
+        return pd.DataFrame()
+
+    try:
+        query = '''
+            SELECT cr.*, c.name AS matched_client_name_db
+            FROM compliance_records cr
+            LEFT JOIN clients c ON cr.matched_client_id = c.id
+            WHERE cr.upload_id = ?
+            ORDER BY cr.id
+        '''
+        return execute_query_df(query, params=(upload_id,), use_cache=False)
+    except Exception as e:
+        print(f"Error obteniendo registros de cumplimiento: {e}")
+        return pd.DataFrame()
+
+
+def get_recent_compliance_uploads(limit=5):
+    """Devuelve las cargas de cumplimiento más recientes."""
+    try:
+        query = """
+            SELECT id, original_filename, uploaded_by, uploaded_at, row_count, country_filter
+            FROM compliance_uploads
+            ORDER BY uploaded_at DESC
+            LIMIT ?
+        """
+        return execute_query_df(query, params=(limit,), use_cache=False)
+    except Exception as e:
+        print(f"Error obteniendo cargas de cumplimiento: {e}")
+        return pd.DataFrame()
+
+
+def get_compliance_upload(upload_id):
+    """Obtiene una carga de cumplimiento específica, incluyendo el blob del archivo."""
+    if not upload_id:
+        return None
+    try:
+        query = """
+            SELECT id, original_filename, uploaded_by, uploaded_at, row_count, country_filter, file_blob
+            FROM compliance_uploads
+            WHERE id = ?
+        """
+        df = execute_query_df(query, params=(upload_id,), use_cache=False)
+        if df.empty:
+            return None
+        return df.iloc[0]
+    except Exception as e:
+        print(f"Error obteniendo carga de cumplimiento {upload_id}: {e}")
+        return None
+
+
+def delete_compliance_upload(upload_id):
+    """Elimina una carga de cumplimiento y todas sus referencias (registros)."""
+    if not upload_id:
+        return False
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("BEGIN TRANSACTION")
+        cursor.execute("DELETE FROM compliance_records WHERE upload_id = ?", (upload_id,))
+        cursor.execute("DELETE FROM compliance_uploads WHERE id = ?", (upload_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error eliminando carga de cumplimiento {upload_id}: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def update_compliance_record_assignment(record_id, client_id, expected_date, status, manual_note=None, matched_by='manual'):
+    """Actualiza la asignación manual de un registro de cumplimiento."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            UPDATE compliance_records
+            SET matched_client_id = ?, expected_date = ?, status = ?, matched_by = ?,
+                assigned_manually = 1, manual_note = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (client_id, expected_date, status, matched_by, manual_note, record_id))
+
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"Error actualizando asignación de cumplimiento: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def get_client_oc_dates(client_id):
+    """Obtiene fechas de actividades relacionadas con OC (excluye Entrega OC)."""
+    try:
+        query = '''
+            SELECT date, activity_id, activity_name
+            FROM calculated_dates
+            WHERE client_id = ?
+              AND LOWER(activity_name) LIKE '%oc%'
+              AND LOWER(activity_name) NOT LIKE '%entrega%'
+            ORDER BY date
+        '''
+        return execute_query_df(query, params=(client_id,), use_cache=False)
+    except Exception as e:
+        print(f"Error obteniendo fechas OC para cliente {client_id}: {e}")
+        return pd.DataFrame()
+
+
+def get_multiple_client_oc_dates(client_ids):
+    """Obtiene fechas OC para múltiples clientes en una sola consulta."""
+    if not client_ids:
+        return pd.DataFrame()
+
+    try:
+        placeholders = ','.join(['?' for _ in client_ids])
+        query = f'''
+            SELECT client_id, date, activity_id, activity_name
+            FROM calculated_dates
+            WHERE client_id IN ({placeholders})
+              AND LOWER(activity_name) LIKE '%oc%'
+              AND LOWER(activity_name) NOT LIKE '%entrega%'
+            ORDER BY client_id, date
+        '''
+        return execute_query_df(query, params=client_ids, use_cache=False)
+    except Exception as e:
+        print(f"Error obteniendo fechas OC batch: {e}")
+        return pd.DataFrame()

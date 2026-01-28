@@ -881,12 +881,18 @@ def get_client_card_html(client):
     return f"""
     <div class="client-card fade-in-up">
         <h4>{client['name']}</h4>
-        <p><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
-        <p><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
-        <p><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
-        <p><strong>Calendario SAP:</strong> {(client.get('calendario_sap') or '').strip() or 'N/A'}</p>
-        <p><strong>Tipo:</strong> {client.get('tipo_cliente', 'N/A') or 'N/A'}</p>
-        <p><strong>Región:</strong> {client.get('region', 'N/A') or 'N/A'}</p>
+        <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:12px; row-gap:6px;">
+            <p><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
+            <p><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
+            <p><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
+            <p><strong>Calendario SAP:</strong> {(client.get('calendario_sap') or '').strip() or 'N/A'}</p>
+            <p><strong>Número tarea SAP:</strong> {client.get('numero_tarea_sap') or 'N/A'}</p>
+            <p><strong>Tipo:</strong> {client.get('tipo_cliente', 'N/A') or 'N/A'}</p>
+            <p><strong>Región:</strong> {client.get('region', 'N/A') or 'N/A'}</p>
+            <p><strong>País:</strong> {client.get('pais', 'N/A') or 'N/A'}</p>
+            <p><strong>Estado:</strong> {client.get('estado') or 'N/A'}</p>
+            <p><strong>Ciudad:</strong> {client.get('ciudad') or 'N/A'}</p>
+        </div>
     </div>
     """
 
