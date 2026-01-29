@@ -27,11 +27,37 @@ def get_logo_base64():
     except FileNotFoundError:
         return ""
 
+
+def inject_scroll_reset_on_tabs():
+    """Inyecta JS para volver al inicio al cambiar de pestaña (st.tabs)."""
+    st.markdown(
+        """
+        <script>
+        const bindScrollReset = () => {
+            document.querySelectorAll('[role="tab"]').forEach(tab => {
+                if (!tab.dataset.scrollBound) {
+                    tab.addEventListener('click', () => {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    });
+                    tab.dataset.scrollBound = 'true';
+                }
+            });
+        };
+
+        const observer = new MutationObserver(() => bindScrollReset());
+        bindScrollReset();
+        observer.observe(document.body, { childList: true, subtree: true });
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def main():
     """Función principal de la aplicación"""
     
     # Aplicar estilos CSS personalizados
     st.markdown(get_custom_css(), unsafe_allow_html=True)
+    inject_scroll_reset_on_tabs()
     
     # SISTEMA DE AUTENTICACIÓN - Requerir login
     require_auth()
@@ -41,12 +67,6 @@ def main():
     # Obtener configuración de entorno y usuario actual
     config = get_db_config()
     current_user = get_current_user()
-    
-    # Mostrar información del entorno si el usuario tiene permisos de debug
-    if auth_system.has_permission('view_debug'):
-        if config.is_development():
-            st.info(f"**Entorno de Desarrollo** - Usuario: {current_user['name']}")
-        config.show_environment_info()
     
     # Inicializar base de datos (solo una vez por sesión para evitar lentitud en cada rerun)
     if not st.session_state.get("_db_initialized", False):
@@ -82,6 +102,10 @@ def main():
             "Generar Calendarios Anuales"
         ]
         help_text = f"Usuario {current_user['username']} - Permisos completos"
+
+        # Solo administradores del sistema pueden gestionar usuarios
+        if auth_system.is_admin():
+            page_options.append("Usuarios")
     
     # Selectbox para navegación
     page = st.sidebar.selectbox(
@@ -91,6 +115,13 @@ def main():
         help=help_text,
         key="page_selector"
     )
+
+    # Si la página cambia, cerrar diálogos de usuario abiertos para evitar que aparezcan al navegar
+    prev_page = st.session_state.get("_current_page")
+    if prev_page is None or page != prev_page:
+        st.session_state["_current_page"] = page
+        st.session_state["show_user_dialog"] = False
+        st.session_state["show_change_pwd_form"] = False
     
     
     # Mostrar estado del sistema
@@ -124,6 +155,11 @@ def main():
         except ImportError as e:
             st.error(f"Error cargando módulo de generación de fechas múltiples: {e}")
             st.info("Verifica que todos los módulos estén disponibles.")
+    elif page == "Usuarios" and auth_system.is_admin():
+        auth_system.render_user_admin_panel()
+
+    # Diálogo de perfil/contraseña (se muestra cuando el usuario lo solicita desde la sidebar)
+    auth_system.render_user_dialog()
 
 def initialize_session_state():
     """Inicializa los estados de sesión necesarios"""

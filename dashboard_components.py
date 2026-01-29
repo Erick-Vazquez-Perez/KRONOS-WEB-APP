@@ -479,16 +479,17 @@ def show_dashboard():
     # Selector de fecha común para ambas tablas (limitado al mes corriente)
     today = datetime.now().date()
     current_year = today.year
-    current_month = today.month
-    last_day = calendar.monthrange(current_year, current_month)[1]
+    # Ampliar el rango para navegar todo el año (no solo el mes corriente)
+    start_of_year = date(current_year, 1, 1)
+    end_of_year = date(current_year, 12, 31)
 
     sel_col, _spacer = st.columns([1, 10])
     with sel_col:
         selected_date = st.date_input(
             "Seleccionar fecha:",
             value=today,
-            min_value=date(current_year, current_month, 1),
-            max_value=date(current_year, current_month, last_day),
+            min_value=start_of_year,
+            max_value=end_of_year,
             key="dashboard_common_date_selector",
             format="DD/MM/YYYY"
         )

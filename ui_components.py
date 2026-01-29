@@ -1,4 +1,5 @@
 import streamlit as st
+import pydeck as pdk
 import json
 import sqlite3
 import pandas as pd
@@ -39,6 +40,30 @@ FILTER_STATE_KEYS = [
     "preview_year",
 ]
 
+def _mark_filters_for_reset():
+    st.session_state["_reset_client_filters"] = True
+
+
+def _apply_pending_filter_reset():
+    if not st.session_state.get("_reset_client_filters"):
+        return
+    st.session_state["client_search"] = ""
+    st.session_state["csr_filter"] = "Todos"
+    st.session_state["vendedor_filter"] = "Todos"
+    st.session_state["tipo_filter"] = "Todos"
+    st.session_state["region_filter"] = "Todos"
+    st.session_state["calendario_sap_filter"] = "Todos"
+    st.session_state["estado_filter"] = "Todos"
+    st.session_state["ciudad_filter"] = "Todos"
+    st.session_state["sort_filter"] = "Nombre A-Z"
+    st.session_state["preview_year"] = datetime.now().year
+    if has_country_filter():
+        if "pais_filter" in st.session_state:
+            del st.session_state["pais_filter"]
+    else:
+        st.session_state["pais_filter"] = "Todos"
+    st.session_state.pop("_reset_client_filters", None)
+
 def snapshot_client_filters():
     """Guarda el estado actual de los filtros de clientes"""
     st.session_state["client_filters_snapshot"] = {
@@ -57,6 +82,9 @@ def restore_client_filters_from_snapshot():
 def show_clients_gallery():
     """Muestra la galería de clientes"""
     st.header("Clientes Green Logistics")
+
+    # Aplicar reset pendiente antes de renderizar widgets
+    _apply_pending_filter_reset()
     
     # Mostrar filtro de país activo si aplica
     if has_country_filter():
@@ -235,25 +263,12 @@ def show_clients_gallery():
 
     with row2_col5:
         st.write("")
-        if st.button("Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
-            st.session_state["csr_filter"] = "Todos"
-            st.session_state["vendedor_filter"] = "Todos"
-            st.session_state["tipo_filter"] = "Todos"
-            st.session_state["region_filter"] = "Todos"
-            st.session_state["calendario_sap_filter"] = "Todos"
-            st.session_state["estado_filter"] = "Todos"
-            st.session_state["ciudad_filter"] = "Todos"
-
-            if not has_country_filter():
-                st.session_state["pais_filter"] = "Todos"
-            else:
-                if "pais_filter" in st.session_state:
-                    del st.session_state["pais_filter"]
-
-            st.session_state["sort_filter"] = "Nombre A-Z"
-
-            # Mantener el botón de búsqueda "Limpiar" como el encargado de borrar texto
-            st.rerun()
+        st.button(
+            "Limpiar Filtros",
+            key="clear_all_filters",
+            help="Limpiar todos los filtros",
+            on_click=_mark_filters_for_reset
+        )
 
 
     
@@ -385,7 +400,7 @@ def show_clients_gallery():
     # Selector de vista + año (para preview)
     col1, col2, _spacer = st.columns([1, 1, 2])
     with col1:
-        view_options = ["Galería", "Lista"]
+        view_options = ["Galería", "Lista", "Mapa"]
         default_view_mode = st.session_state.get("view_mode", "Galería")
         if default_view_mode not in view_options:
             default_view_mode = "Galería"
@@ -399,13 +414,15 @@ def show_clients_gallery():
     with col2:
         current_year = datetime.now().year
         year_options = list(range(current_year - 2, current_year + 6))
-        default_preview_year = st.session_state.get("preview_year", current_year)
-        if default_preview_year not in year_options:
-            default_preview_year = current_year
+        # Garantizar coherencia del estado antes de renderizar el widget para evitar advertencias
+        if "preview_year" not in st.session_state:
+            st.session_state["preview_year"] = current_year
+        if st.session_state["preview_year"] not in year_options:
+            st.session_state["preview_year"] = current_year
+
         preview_year = st.selectbox(
             "Año:",
             year_options,
-            index=year_options.index(default_preview_year),
             key="preview_year",
             help="Año usado para el preview de fechas por cliente"
         )
@@ -421,6 +438,8 @@ def show_clients_gallery():
     # Mostrar clientes según la vista seleccionada
     if view_mode == "Lista":
         show_clients_list_view(clients_to_show, preview_year)
+    elif view_mode == "Mapa":
+        show_clients_map_view(clients_to_show)
     else:
         show_clients_gallery_view(clients_to_show, preview_year)
 
@@ -620,6 +639,133 @@ def show_clients_list_view(clients_to_show, preview_year):
             if i < len(display_data) - 1:
                 st.divider()
 
+
+def _normalize_state_key(state: str) -> str:
+    if not state:
+        return ""
+    replacements = {
+        "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u",
+        "Á": "a", "É": "e", "Í": "i", "Ó": "o", "Ú": "u", "Ü": "u",
+    }
+    norm = state.strip()
+    for k, v in replacements.items():
+        norm = norm.replace(k, v)
+    return norm.lower()
+
+
+MEXICO_STATE_COORDS = {
+    "aguascalientes": (21.8853, -102.2916),
+    "baja california": (30.8406, -115.2838),
+    "baja california sur": (26.0444, -111.6661),
+    "campeche": (19.8301, -90.5349),
+    "chiapas": (16.7569, -93.1292),
+    "chihuahua": (28.6320, -106.0691),
+    "ciudad de mexico": (19.4326, -99.1332),
+    "cdmx": (19.4326, -99.1332),
+    "coahuila": (27.0587, -101.7068),
+    "colima": (19.2452, -103.7241),
+    "durango": (24.0277, -104.6532),
+    "guanajuato": (21.0190, -101.2574),
+    "guerrero": (17.4392, -99.5451),
+    "hidalgo": (20.1011, -98.7591),
+    "jalisco": (20.6597, -103.3496),
+    "mexico": (19.2921, -99.6557),
+    "michoacan": (19.5665, -101.7068),
+    "morelos": (18.6813, -99.1013),
+    "nayarit": (21.7514, -104.8455),
+    "nuevo leon": (25.5922, -99.9962),
+    "oaxaca": (17.0732, -96.7266),
+    "puebla": (19.0413, -98.2062),
+    "queretaro": (20.5888, -100.3899),
+    "quintana roo": (19.1817, -88.4791),
+    "san luis potosi": (22.1565, -100.9855),
+    "sinaloa": (24.8091, -107.3940),
+    "sonora": (29.2972, -110.3309),
+    "tabasco": (17.8409, -92.6189),
+    "tamaulipas": (24.2669, -98.8363),
+    "tlaxcala": (19.3182, -98.2375),
+    "veracruz": (19.1738, -96.1342),
+    "yucatan": (20.7099, -89.0943),
+    "zacatecas": (22.7709, -102.5832),
+}
+
+
+def show_clients_map_view(clients_to_show):
+    """Muestra un mapa de México con clientes por estado"""
+    if clients_to_show.empty:
+        st.info("No hay clientes para mostrar en el mapa")
+        return
+
+    mexico_clients = clients_to_show[
+        clients_to_show.get('pais', '').fillna('').str.lower().str.contains('mexico|méxico')
+    ]
+
+    if mexico_clients.empty:
+        st.info("Selecciona México para ver el mapa de clientes por estado")
+        return
+
+    grouped = []
+    for state, group in mexico_clients.groupby('estado'):
+        key = _normalize_state_key(state)
+        coords = MEXICO_STATE_COORDS.get(key)
+        if not coords:
+            continue
+        client_names = sorted(group['name'].fillna('Sin nombre').tolist())
+        grouped.append({
+            'Estado': state or 'Sin estado',
+            'count': len(group),
+            'clients': " | ".join(client_names),
+            'lat': coords[0],
+            'lon': coords[1],
+        })
+
+    if not grouped:
+        st.info("No hay estados con clientes mapeables en México")
+        return
+
+    map_df = pd.DataFrame(grouped)
+    st.subheader("Clientes por estado (México)")
+
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=map_df,
+        get_position='[lon, lat]',
+        get_radius="10000 + (count * 2000)",
+        get_fill_color=[6, 3, 141, 180],
+        pickable=True,
+        auto_highlight=True,
+    )
+
+    view_state = pdk.ViewState(latitude=23.6345, longitude=-102.5528, zoom=4.2, pitch=0)
+
+    tooltip = {
+        "html": "<b>{Estado}</b><br/>Clientes: {count}<br/>{clients}",
+        "style": {
+            "font-family": "Arial",
+            "color": "#0f172a",
+            "font-size": "12px",
+            "backgroundColor": "#ffffff",
+            "border": "1px solid #cbd5e1",
+            "borderRadius": "8px",
+            "padding": "8px 10px",
+            "boxShadow": "0 4px 12px rgba(15, 23, 42, 0.12)",
+        },
+    }
+
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            # Basemap claro sin requerir token (Carto Positron)
+            map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        )
+    )
+
+    st.markdown("### Detalle por estado")
+    display_df = map_df[['Estado', 'count', 'clients']].rename(columns={'count': 'Clientes', 'clients': 'Listado'})
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
 # ========== FUNCIONES DE DETALLE DEL CLIENTE CON EDICIÓN MEJORADA ==========
 
 def show_client_detail():
@@ -631,6 +777,16 @@ def show_client_detail():
         st.rerun()
         return
     
+    # Forzar scroll al inicio al entrar al detalle
+    st.markdown(
+        """
+        <script>
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
     client_id = st.session_state.selected_client
     
     # NO limpiar estados de confirmación aquí, solo claves de botones duplicadas
@@ -1183,53 +1339,13 @@ def show_copy_dates_modal(source_client_id, source_client_name):
                     
                     with col3:
                         if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_{source_client_id}"):
+                            st.session_state[f'show_copy_dates_modal_{source_client_id}'] = False
                             # Limpiar estados del modal
                             keys_to_clear = [k for k in st.session_state.keys() if f"copy_client_{source_client_id}" in k or f"search_copy_{source_client_id}" in k or f"select_all_copy_{source_client_id}" in k]
                             for key in keys_to_clear:
                                 if key in st.session_state:
                                     del st.session_state[key]
-                            st.session_state[f'show_copy_dates_modal_{source_client_id}'] = False
                             st.rerun()
-
-# ========== MODAL DE COPIA DE FRECUENCIAS ==========
-
-def show_copy_frequencies_modal(source_client_id, source_client_name):
-    """Muestra el modal para seleccionar clientes y copiar frecuencias"""
-    
-    # Contenedor del modal con estilo
-    with st.container():
-        st.markdown("---")
-        st.markdown(f"### Copiar Frecuencias de: {source_client_name}")
-        st.markdown("Selecciona los clientes que recibirán las frecuencias. Solo se muestran clientes que tienen únicamente las 3 actividades por defecto (sin actividades extra).")
-        
-        # Obtener clientes compatibles (solo con actividades por defecto)
-        compatible_clients = get_clients_with_default_activities_only(source_client_id)
-        
-        if compatible_clients.empty:
-            st.warning("No se encontraron clientes compatibles.")
-            st.info("Para que un cliente aparezca aquí, debe tener únicamente las 3 actividades por defecto: Fecha Envío OC, Albaranado, Fecha Entrega (sin actividades extra).")
-            
-            # Mostrar resumen de actividades del cliente origen
-            source_activities = get_client_activity_summary(source_client_id)
-            if not source_activities.empty:
-                st.markdown("**Configuración del cliente origen:**")
-                for _, activity in source_activities.iterrows():
-                    st.write(f"- {activity['activity_name']}: {activity['frequency_name']}")
-            
-            # Botón para cerrar
-            if st.button("Cerrar", use_container_width=True, key=f"close_copy_freq_{source_client_id}"):
-                st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
-                st.rerun()
-        else:
-            # Mostrar información de las frecuencias a copiar
-            source_activities = get_client_activity_summary(source_client_id)
-            if source_activities.empty:
-                st.warning("El cliente origen no tiene frecuencias configuradas para copiar.")
-            else:
-                activities_count = len(source_activities)
-                
-                st.metric("Actividades con Frecuencias a Copiar", activities_count)
-                
                 st.markdown("**Frecuencias que se copiarán:**")
                 for _, activity in source_activities.iterrows():
                     st.write(f"- {activity['activity_name']}: **{activity['frequency_name']}**")
@@ -2796,8 +2912,13 @@ def show_client_data_tab_improved(client):
                 st.write(f"- **Vendedor:** '{get_original_value('vendedor')}' -> '{vendedor}'")
             if calendario_sap != get_original_value('calendario_sap'):
                 st.write(f"- **Calendario SAP:** '{get_original_value('calendario_sap')}' -> '{calendario_sap}'")
-            if numero_tarea_sap != int(get_original_value('numero_tarea_sap')):
-                st.write(f"- **Número tarea SAP:** '{get_original_value('numero_tarea_sap')}' -> '{numero_tarea_sap}'")
+            # Manejo robusto por si el valor original no es convertible a int (NaN/'' etc.)
+            try:
+                original_num_tarea_safe = int(get_original_value('numero_tarea_sap'))
+            except Exception:
+                original_num_tarea_safe = 0
+            if numero_tarea_sap != original_num_tarea_safe:
+                st.write(f"- **Número tarea SAP:** '{original_num_tarea_safe}' -> '{numero_tarea_sap}'")
             if estado != get_original_value('estado'):
                 st.write(f"- **Estado:** '{get_original_value('estado')}' -> '{estado}'")
             if ciudad != get_original_value('ciudad'):

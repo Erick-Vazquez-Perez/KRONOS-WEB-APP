@@ -5,7 +5,7 @@ import warnings
 import threading
 import time
 import hashlib
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from config import get_database_path, get_db_config
 
 # Suprimir warnings específicos de pandas sobre SQLAlchemy
@@ -322,7 +322,12 @@ def create_database_indexes():
         "CREATE INDEX IF NOT EXISTS idx_compliance_records_upload ON compliance_records(upload_id)",
         "CREATE INDEX IF NOT EXISTS idx_compliance_records_client ON compliance_records(matched_client_id)",
         "CREATE INDEX IF NOT EXISTS idx_compliance_records_status ON compliance_records(status)",
-        "CREATE INDEX IF NOT EXISTS idx_compliance_records_dates ON compliance_records(reference_date, expected_date)"
+        "CREATE INDEX IF NOT EXISTS idx_compliance_records_dates ON compliance_records(reference_date, expected_date)",
+
+        # Índices para la tabla de usuarios
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+        "CREATE INDEX IF NOT EXISTS idx_users_active_role ON users(is_active, role)",
+        "CREATE INDEX IF NOT EXISTS idx_users_locked ON users(locked_until)"
     ]
     
     try:
@@ -704,6 +709,62 @@ def init_database():
         )
     ''')
 
+    # Tabla de usuarios para autenticación
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL,
+            name TEXT NOT NULL,
+            permissions TEXT DEFAULT '{}',
+            country_filter TEXT,
+            is_active INTEGER DEFAULT 1,
+            must_reset_password INTEGER DEFAULT 0,
+            failed_attempts INTEGER DEFAULT 0,
+            locked_until TIMESTAMP,
+            last_login TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT,
+            updated_by TEXT
+        )
+    ''')
+
+    # Tabla de auditoría de logins
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS login_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_login_events_user_date ON login_events(username, login_at)')
+
+    # Migración no destructiva para asegurar columnas críticas en usuarios
+    cursor.execute("PRAGMA table_info(users)")
+    users_columns_info = cursor.fetchall()
+    users_column_names = [col[1] for col in users_columns_info]
+
+    migrations = [
+        ("permissions", 'ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT "{}"'),
+        ("country_filter", 'ALTER TABLE users ADD COLUMN country_filter TEXT'),
+        ("is_active", 'ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1'),
+        ("must_reset_password", 'ALTER TABLE users ADD COLUMN must_reset_password INTEGER DEFAULT 0'),
+        ("failed_attempts", 'ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0'),
+        ("locked_until", 'ALTER TABLE users ADD COLUMN locked_until TIMESTAMP'),
+        ("last_login", 'ALTER TABLE users ADD COLUMN last_login TIMESTAMP'),
+        ("created_at", 'ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ("updated_at", 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ("created_by", 'ALTER TABLE users ADD COLUMN created_by TEXT'),
+        ("updated_by", 'ALTER TABLE users ADD COLUMN updated_by TEXT')
+    ]
+
+    for column_name, alter_sql in migrations:
+        if column_name not in users_column_names:
+            cursor.execute(alter_sql)
+            print(f"Campo {column_name} agregado a users")
+
     # Asegurar columna activity_id en calculated_dates (migración no destructiva)
     cursor.execute("PRAGMA table_info(calculated_dates)")
     cd_columns_info = cursor.fetchall()
@@ -771,6 +832,301 @@ def init_database():
     update_frequency_sap_codes()
     
     conn.close()
+
+
+# === FUNCIONES DE USUARIOS ===
+
+def _serialize_permissions(permissions: dict) -> str:
+    """Convierte el diccionario de permisos a JSON seguro."""
+    try:
+        return json.dumps(permissions or {}, sort_keys=True)
+    except Exception:
+        return "{}"
+
+
+def _deserialize_permissions(raw: str) -> dict:
+    """Convierte el campo permissions almacenado en texto a dict."""
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def get_user_by_username(username: str, include_inactive: bool = False) -> dict | None:
+    """Obtiene un usuario por username."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        query = '''
+            SELECT id, username, password_hash, role, name, permissions, country_filter,
+                   is_active, must_reset_password, failed_attempts, locked_until, last_login,
+                   created_at, updated_at
+            FROM users
+            WHERE username = ? {status_filter}
+            LIMIT 1
+        '''.replace("{status_filter}", "" if include_inactive else "AND is_active = 1")
+
+        cursor.execute(query, (username,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        # Soportar diferentes formatos de fila (tuple o Row)
+        row_dict = {
+            'id': row[0],
+            'username': row[1],
+            'password_hash': row[2],
+            'role': row[3],
+            'name': row[4],
+            'permissions': _deserialize_permissions(row[5]),
+            'country_filter': row[6],
+            'is_active': bool(row[7]),
+            'must_reset_password': bool(row[8]),
+            'failed_attempts': row[9] or 0,
+            'locked_until': row[10],
+            'last_login': row[11],
+            'created_at': row[12],
+            'updated_at': row[13]
+        }
+        return row_dict
+    except Exception as e:
+        print(f"Error obteniendo usuario {username}: {e}")
+        return None
+    finally:
+        return_pooled_connection(conn)
+
+
+def list_users(include_inactive: bool = False):
+    """Lista usuarios en DataFrame para UI/administración."""
+    status_filter = "" if include_inactive else "WHERE is_active = 1"
+    query = f'''
+        SELECT id, username, role, name, country_filter, is_active, must_reset_password,
+               failed_attempts, locked_until, last_login, created_at, updated_at
+        FROM users
+        {status_filter}
+        ORDER BY username
+    '''
+    try:
+        return execute_query_df(query, use_cache=False)
+    except Exception as e:
+        print(f"Error listando usuarios: {e}")
+        return pd.DataFrame()
+
+
+def create_user(username: str, password_hash: str, role: str, name: str, permissions: dict | None,
+                country_filter: str | None, created_by: str | None = None,
+                must_reset_password: bool = False, is_active: bool = True) -> bool:
+    """Crea un usuario nuevo."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO users (username, password_hash, role, name, permissions, country_filter,
+                               is_active, must_reset_password, failed_attempts, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        ''', (
+            username.strip(),
+            password_hash,
+            role,
+            name.strip(),
+            _serialize_permissions(permissions),
+            country_filter.strip() if country_filter else None,
+            1 if is_active else 0,
+            1 if must_reset_password else 0,
+            created_by,
+            created_by
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error creando usuario {username}: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def update_user(username: str, name: str | None = None, role: str | None = None,
+                permissions: dict | None = None, country_filter: str | None = None,
+                is_active: bool | None = None, updated_by: str | None = None,
+                must_reset_password: bool | None = None) -> bool:
+    """Actualiza campos de un usuario existente."""
+    fields = []
+    params = []
+
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name.strip())
+    if role is not None:
+        fields.append("role = ?")
+        params.append(role)
+    if permissions is not None:
+        fields.append("permissions = ?")
+        params.append(_serialize_permissions(permissions))
+    if country_filter is not None:
+        fields.append("country_filter = ?")
+        params.append(country_filter.strip() if country_filter else None)
+    if is_active is not None:
+        fields.append("is_active = ?")
+        params.append(1 if is_active else 0)
+    if must_reset_password is not None:
+        fields.append("must_reset_password = ?")
+        params.append(1 if must_reset_password else 0)
+
+    fields.append("updated_at = CURRENT_TIMESTAMP")
+    if updated_by is not None:
+        fields.append("updated_by = ?")
+        params.append(updated_by)
+
+    if not fields:
+        return False
+
+    params.append(username)
+    sql = f"UPDATE users SET {', '.join(fields)} WHERE username = ?"
+
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(sql, params)
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"Error actualizando usuario {username}: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def set_user_password(username: str, password_hash: str, updated_by: str | None = None,
+                      must_reset_password: bool = False) -> bool:
+    """Actualiza contraseña y limpia bloqueos."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE users
+            SET password_hash = ?, failed_attempts = 0, locked_until = NULL,
+                must_reset_password = 0, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            WHERE username = ?
+        ''', (password_hash, updated_by, username))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"Error actualizando contraseña para {username}: {e}")
+        return False
+    finally:
+        return_pooled_connection(conn)
+
+
+def record_login_failure(username: str, max_attempts: int = 5, lock_minutes: int = 15):
+    """Incrementa intentos fallidos y aplica lockout temporal."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE users
+            SET failed_attempts = failed_attempts + 1,
+                locked_until = CASE WHEN failed_attempts + 1 >= ? THEN ? ELSE locked_until END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE username = ?
+        ''', (max_attempts, (datetime.utcnow() + timedelta(minutes=lock_minutes)).isoformat(), username))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error registrando intento fallido para {username}: {e}")
+    finally:
+        return_pooled_connection(conn)
+
+
+def record_login_success(username: str):
+    """Limpia contadores tras login exitoso."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE users
+            SET failed_attempts = 0, locked_until = NULL, last_login = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE username = ?
+        ''', (username,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error registrando login exitoso para {username}: {e}")
+    finally:
+        return_pooled_connection(conn)
+
+
+def record_login_event(username: str):
+    """Registra un login exitoso para analítica de uso."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO login_events (username) VALUES (?)', (username,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error registrando login_event para {username}: {e}")
+    finally:
+        return_pooled_connection(conn)
+
+
+def get_login_counts_by_day(year: int, month: int):
+    """Devuelve un DataFrame con conteo de logins por día y usuario para un mes dado."""
+    month_str = f"{month:02d}"
+    query = '''
+        SELECT
+            username,
+            CAST(strftime('%d', login_at) AS INTEGER) AS day,
+            COUNT(*) AS login_count
+        FROM login_events
+        WHERE strftime('%Y', login_at) = ?
+          AND strftime('%m', login_at) = ?
+        GROUP BY username, day
+        ORDER BY username, day
+    '''
+    try:
+        return execute_query_df(query, params=(str(year), month_str), use_cache=False)
+    except Exception as e:
+        print(f"Error obteniendo login counts: {e}")
+        return pd.DataFrame()
+
+
+def ensure_admin_user(username: str, password_hash: str, name: str, role: str,
+                      permissions: dict, country_filter: str | None = None):
+    """Crea o actualiza el usuario administrador base (idempotente)."""
+    conn = get_pooled_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        perm_json = _serialize_permissions(permissions)
+
+        if row:
+            cursor.execute('''
+                UPDATE users
+                SET role = ?, name = ?, permissions = ?, country_filter = ?, is_active = 1,
+                    password_hash = ?, must_reset_password = 0, updated_at = CURRENT_TIMESTAMP,
+                    updated_by = 'system'
+                WHERE username = ?
+            ''', (role, name, perm_json, country_filter, password_hash, username))
+        else:
+            cursor.execute('''
+                INSERT INTO users (username, password_hash, role, name, permissions, country_filter,
+                                   is_active, must_reset_password, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, 1, 0, 'system', 'system')
+            ''', (username, password_hash, role, name, perm_json, country_filter))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error asegurando usuario admin {username}: {e}")
+    finally:
+        return_pooled_connection(conn)
 
 # === FUNCIONES DE CLIENTES OPTIMIZADAS ===
 
