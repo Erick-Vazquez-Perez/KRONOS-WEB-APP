@@ -667,47 +667,6 @@ def init_database():
                     print(f"Error restaurando datos: {e}")
                     continue
 
-    # Tabla de cargas de cumplimiento (referencia al Excel)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS compliance_uploads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uploaded_by TEXT,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            original_filename TEXT,
-            file_hash TEXT,
-            row_count INTEGER DEFAULT 0,
-            country_filter TEXT,
-            file_blob BLOB
-        )
-    ''')
-
-    # Tabla de registros de cumplimiento por fila del Excel
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS compliance_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            upload_id INTEGER NOT NULL,
-            sales_document TEXT,
-            reference_date DATE,
-            ag_code TEXT,
-            client_name_excel TEXT,
-            matched_client_id INTEGER,
-            matched_client_name TEXT,
-            match_score REAL,
-            expected_date DATE,
-            activity_id INTEGER,
-            activity_name TEXT,
-            status TEXT DEFAULT 'sin_asignar' CHECK(status IN ('cumple','incumple','sin_asignar')),
-            matched_by TEXT,
-            assigned_manually INTEGER DEFAULT 0,
-            manual_note TEXT,
-            raw_row TEXT,
-            country_filter TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (upload_id) REFERENCES compliance_uploads(id),
-            FOREIGN KEY (matched_client_id) REFERENCES clients(id)
-        )
-    ''')
 
     # Tabla de usuarios para autenticación
     cursor.execute('''
