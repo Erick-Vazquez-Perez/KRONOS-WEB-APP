@@ -593,7 +593,7 @@ class AuthSystem:
                 st.session_state["show_change_pwd_form"] = False
 
             if not st.session_state["show_change_pwd_form"]:
-                col_a, col_b, col_c = st.columns([1, 1, 1])
+                col_a, col_b = st.columns([1, 1])
                 with col_a:
                     if st.button("Cambiar contraseña", type="primary", use_container_width=True):
                         st.session_state["show_change_pwd_form"] = True
@@ -601,12 +601,6 @@ class AuthSystem:
                 with col_b:
                     if st.button("Cerrar sesión", use_container_width=True):
                         self.logout()
-                        st.session_state["show_user_dialog"] = False
-                        st.session_state["show_change_pwd_form"] = False
-                        st.session_state["_user_dialog_sticky"] = False
-                        st.rerun()
-                with col_c:
-                    if st.button("Cerrar", use_container_width=True):
                         st.session_state["show_user_dialog"] = False
                         st.session_state["show_change_pwd_form"] = False
                         st.session_state["_user_dialog_sticky"] = False
