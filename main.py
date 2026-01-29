@@ -169,6 +169,10 @@ def initialize_session_state():
         st.session_state.show_client_detail = False
     if 'show_edit_modal' not in st.session_state:
         st.session_state.show_edit_modal = False
+    if 'show_user_dialog' not in st.session_state:
+        st.session_state.show_user_dialog = False
+    if 'show_change_pwd_form' not in st.session_state:
+        st.session_state.show_change_pwd_form = False
     
     # Inicializar estados de filtros (se eliminan cuando se hace "limpiar")
     # No inicializar con valores por defecto para permitir que los widgets se inicialicen naturalmente
