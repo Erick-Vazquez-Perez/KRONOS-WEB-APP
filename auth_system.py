@@ -503,6 +503,7 @@ class AuthSystem:
             st.markdown(user_info)
 
             if st.button("Ver usuario", use_container_width=True):
+                st.session_state["_user_dialog_sticky"] = True
                 st.session_state["show_user_dialog"] = True
 
     def show_user_info_bottom(self):
@@ -535,6 +536,7 @@ class AuthSystem:
             st.markdown(user_info, unsafe_allow_html=True)
 
             if st.button("Ver usuario", use_container_width=True, key="show_user_dialog_bottom"):
+                st.session_state["_user_dialog_sticky"] = True
                 st.session_state["show_user_dialog"] = True
 
     def render_user_dialog(self):
@@ -545,11 +547,13 @@ class AuthSystem:
         user = self.get_current_user()
         if not user:
             st.session_state["show_user_dialog"] = False
+            st.session_state["_user_dialog_sticky"] = False
             return
 
         db_user = get_user_by_username(user['username'], include_inactive=True)
         if not db_user:
             st.session_state["show_user_dialog"] = False
+            st.session_state["_user_dialog_sticky"] = False
             st.error("No se encontró el usuario en la base de datos.")
             return
 
@@ -589,7 +593,7 @@ class AuthSystem:
                 st.session_state["show_change_pwd_form"] = False
 
             if not st.session_state["show_change_pwd_form"]:
-                col_a, col_b = st.columns([1, 1])
+                col_a, col_b, col_c = st.columns([1, 1, 1])
                 with col_a:
                     if st.button("Cambiar contraseña", type="primary", use_container_width=True):
                         st.session_state["show_change_pwd_form"] = True
@@ -599,6 +603,13 @@ class AuthSystem:
                         self.logout()
                         st.session_state["show_user_dialog"] = False
                         st.session_state["show_change_pwd_form"] = False
+                        st.session_state["_user_dialog_sticky"] = False
+                        st.rerun()
+                with col_c:
+                    if st.button("Cerrar", use_container_width=True):
+                        st.session_state["show_user_dialog"] = False
+                        st.session_state["show_change_pwd_form"] = False
+                        st.session_state["_user_dialog_sticky"] = False
                         st.rerun()
                 return
 
@@ -616,6 +627,7 @@ class AuthSystem:
 
             if cancel_change:
                 st.session_state["show_change_pwd_form"] = False
+                st.session_state["_user_dialog_sticky"] = True
                 st.rerun()
 
             if submit_change:
@@ -647,6 +659,7 @@ class AuthSystem:
                         self.logout()
                         st.session_state["show_change_pwd_form"] = False
                         st.session_state["show_user_dialog"] = False
+                        st.session_state["_user_dialog_sticky"] = False
                         st.rerun()
                     else:
                         st.error("No se pudo actualizar la contraseña.")

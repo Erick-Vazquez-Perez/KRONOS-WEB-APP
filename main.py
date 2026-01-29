@@ -75,6 +75,12 @@ def main():
     
     # Inicializar estados de sesión
     initialize_session_state()
+
+    # Solo mostrar el diálogo de usuario si está marcado como persistente
+    if st.session_state.get("_user_dialog_sticky"):
+        st.session_state["show_user_dialog"] = True
+    else:
+        st.session_state["show_user_dialog"] = False
     
     # Sidebar para navegación
     # Mostrar logo de Werfen en la sidebar usando HTML para evitar el botón fullscreen
@@ -173,6 +179,8 @@ def initialize_session_state():
         st.session_state.show_user_dialog = False
     if 'show_change_pwd_form' not in st.session_state:
         st.session_state.show_change_pwd_form = False
+    if '_user_dialog_sticky' not in st.session_state:
+        st.session_state._user_dialog_sticky = False
     
     # Inicializar estados de filtros (se eliminan cuando se hace "limpiar")
     # No inicializar con valores por defecto para permitir que los widgets se inicialicen naturalmente
