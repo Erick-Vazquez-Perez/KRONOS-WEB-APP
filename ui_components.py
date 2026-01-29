@@ -1346,107 +1346,121 @@ def show_copy_dates_modal(source_client_id, source_client_name):
                                 if key in st.session_state:
                                     del st.session_state[key]
                             st.rerun()
-                st.markdown("**Frecuencias que se copiarán:**")
+
+
+# ========== MODAL DE COPIA DE FRECUENCIAS ==========
+
+def show_copy_frequencies_modal(source_client_id, source_client_name):
+    """Muestra el modal para seleccionar clientes y copiar frecuencias"""
+
+    with st.container():
+        st.markdown("---")
+        st.markdown(f"### Copiar Frecuencias de: {source_client_name}")
+        st.markdown("Selecciona los clientes que recibirán las frecuencias. Solo se muestran clientes con las mismas actividades.")
+
+        compatible_clients = get_clients_with_matching_frequencies(source_client_id)
+
+        if compatible_clients.empty:
+            st.warning("No se encontraron clientes con las mismas actividades.")
+            st.info("Para copiar frecuencias, el cliente destino debe tener las mismas actividades configuradas que el cliente origen.")
+
+            source_activities = get_client_activity_summary(source_client_id)
+            if not source_activities.empty:
+                st.markdown("**Actividades del cliente origen:**")
                 for _, activity in source_activities.iterrows():
-                    st.write(f"- {activity['activity_name']}: **{activity['frequency_name']}**")
-                
-                st.markdown("---")
-                
-                # Búsqueda de clientes
-                search_text = st.text_input(
-                    "Buscar clientes:",
-                    placeholder="Buscar por nombre, código AG, CSR, vendedor...",
-                    key=f"search_copy_freq_{source_client_id}"
-                )
-                
-                # Filtrar clientes según búsqueda
-                filtered_clients = compatible_clients.copy()
-                if search_text:
-                    filtered_clients = filtered_clients[
-                        filtered_clients['name'].str.contains(search_text, case=False, na=False) |
-                        filtered_clients['codigo_ag'].str.contains(search_text, case=False, na=False) |
-                        filtered_clients['csr'].str.contains(search_text, case=False, na=False) |
-                        filtered_clients['vendedor'].str.contains(search_text, case=False, na=False)
-                    ]
-                
-                if filtered_clients.empty:
-                    st.info("No se encontraron clientes que coincidan con la búsqueda.")
+                    st.write(f"- {activity['activity_name']}: {activity['frequency_name']}")
+            return
+
+        source_activities = get_client_activity_summary(source_client_id)
+        st.markdown("**Frecuencias que se copiarán:**")
+        for _, activity in source_activities.iterrows():
+            st.write(f"- {activity['activity_name']}: **{activity['frequency_name']}**")
+
+        st.markdown("---")
+
+        search_text = st.text_input(
+            "Buscar clientes:",
+            placeholder="Buscar por nombre, código AG, CSR, vendedor...",
+            key=f"search_copy_freq_{source_client_id}"
+        )
+
+        filtered_clients = compatible_clients.copy()
+        if search_text:
+            filtered_clients = filtered_clients[
+                filtered_clients['name'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['codigo_ag'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['csr'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['vendedor'].str.contains(search_text, case=False, na=False)
+            ]
+
+        if filtered_clients.empty:
+            st.info("No se encontraron clientes que coincidan con la búsqueda.")
+            return
+
+        st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
+
+        select_all_key = f"select_all_copy_freq_{source_client_id}"
+        select_all = st.checkbox(
+            "Seleccionar todos los clientes visibles",
+            key=select_all_key
+        )
+
+        if select_all:
+            for _, client in filtered_clients.iterrows():
+                checkbox_key = f"copy_freq_client_{source_client_id}_{client['id']}"
+                st.session_state[checkbox_key] = True
+
+        selected_clients = []
+
+        with st.container(height=300):
+            for _, client in filtered_clients.iterrows():
+                target_client_id = client['id']
+                client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
+
+                checkbox_key = f"copy_freq_client_{source_client_id}_{target_client_id}"
+                current_value = st.session_state.get(checkbox_key, False)
+
+                if st.checkbox(
+                    client_info,
+                    value=current_value,
+                    key=checkbox_key
+                ):
+                    selected_clients.append(target_client_id)
+
+        col1, col2, col3 = st.columns([1, 1, 1])
+
+        with col1:
+            if st.button("Copiar Frecuencias", type="primary", use_container_width=True, key=f"execute_copy_freq_{source_client_id}"):
+                if not selected_clients:
+                    st.error("Selecciona al menos un cliente para copiar las frecuencias.")
                 else:
-                    st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
-                    
-                    # Inicializar estado de selección para todos los clientes visibles
-                    select_all_key = f"select_all_copy_freq_{source_client_id}"
-                    
-                    # Checkbox para seleccionar todos
-                    select_all = st.checkbox(
-                        "Seleccionar todos los clientes visibles",
-                        key=select_all_key
-                    )
-                    
-                    # Si se marca "seleccionar todos", actualizar todos los checkboxes de los clientes filtrados
-                    if select_all:
-                        for _, client in filtered_clients.iterrows():
-                            checkbox_key = f"copy_freq_client_{source_client_id}_{client['id']}"
-                            st.session_state[checkbox_key] = True
-                    
-                    # Lista de checkboxes para cada cliente
-                    selected_clients = []
-                    
-                    # Contenedor scrolleable para la lista de clientes
-                    with st.container(height=300):
-                        for _, client in filtered_clients.iterrows():
-                            client_id = client['id']
-                            client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
-                            
-                            checkbox_key = f"copy_freq_client_{source_client_id}_{client_id}"
-                            
-                            # Usar el valor actual del session_state
-                            current_value = st.session_state.get(checkbox_key, False)
-                            
-                            if st.checkbox(
-                                client_info,
-                                value=current_value,
-                                key=checkbox_key
-                            ):
-                                selected_clients.append(client_id)
-                    
-                    # Botones de acción
-                    col1, col2, col3 = st.columns([1, 1, 1])
-                    
-                    with col1:
-                        if st.button("Copiar Frecuencias", type="primary", use_container_width=True, key=f"execute_copy_freq_{source_client_id}"):
-                            if not selected_clients:
-                                st.error("Selecciona al menos un cliente para copiar las frecuencias.")
-                            else:
-                                with st.spinner("Copiando frecuencias..."):
-                                    success, message = copy_frequencies_to_clients(source_client_id, selected_clients)
-                                
-                                if success:
-                                    st.success(message)
-                                    # Limpiar estados del modal
-                                    keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
-                                    for key in keys_to_clear:
-                                        if key in st.session_state:
-                                            del st.session_state[key]
-                                    st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
-                                    st.rerun()
-                                else:
-                                    st.error(message)
-                    
-                    with col2:
-                        selected_count = len(selected_clients)
-                        if selected_count > 0:
-                            st.info(f"{selected_count} cliente(s) seleccionado(s)")
-                    
-                    with col3:
-                        if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_freq_{source_client_id}"):
-                            # Limpiar estados del modal
-                            keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
-                            st.rerun()
+                    with st.spinner("Copiando frecuencias..."):
+                        success, message = copy_frequencies_to_clients(source_client_id, selected_clients)
+
+                    if success:
+                        st.success(message)
+                        keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+        with col2:
+            selected_count = len(selected_clients)
+            if selected_count > 0:
+                st.info(f"{selected_count} cliente(s) seleccionado(s)")
+
+        with col3:
+            if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_freq_{source_client_id}"):
+                keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
+                st.rerun()
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
 
