@@ -18,7 +18,7 @@ from database import (
     get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary,
     get_clients_with_default_activities_only, copy_frequencies_to_clients
 )
-from date_calculator import recalculate_client_dates, recalculate_client_dates_by_year
+from date_calculator import recalculate_client_dates, recalculate_client_dates_by_year, recalculate_activity_dates_by_year
 from calendar_utils import create_client_calendar_table, format_frequency_description, create_client_calendar_table_by_year, get_client_year_summary_by_year, get_available_years
 from client_constants import get_tipos_cliente, get_regiones, get_paises
 from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
@@ -2524,7 +2524,7 @@ def show_client_activities_section(client_id):
             st.write("**Actividades Actuales:**")
             
             for idx, (_, activity) in enumerate(activities.iterrows()):
-                col1, col2, col3 = st.columns([3, 3, 1])
+                col1, col2, col3 = st.columns([3, 3, 2])
                 
                 with col1:
                     st.write(f"**{activity['activity_name']}**")
@@ -2561,16 +2561,57 @@ def show_client_activities_section(client_id):
                                     st.rerun()
                 
                 with col3:
-                    # Botón para eliminar actividad
-                    if not is_read_only_mode():
-                        if st.button("Eliminar", key=f"delete_{idx}", help="Eliminar actividad"):
-                            if delete_client_activity(client_id, activity['activity_name']):
-                                st.success(f"Actividad '{activity['activity_name']}' eliminada")
-                                st.rerun()
-                            else:
-                                st.error("Error al eliminar la actividad")
-                    else:
-                        st.button("Eliminar", key=f"delete_{idx}", disabled=True, help="No disponible en producción")
+                    btn_col1, btn_col2 = st.columns(2)
+
+                    with btn_col1:
+                        if not is_read_only_mode():
+                            if st.button(
+                                "Recalcular",
+                                key=f"recalc_activity_{client_id}_{idx}",
+                                help="Recalcular fechas solo para esta actividad",
+                            ):
+                                selected_year = st.session_state.get(
+                                    f"year_selector_{client_id}",
+                                    datetime.now().year,
+                                )
+                                with st.spinner(
+                                    f"Recalculando {activity['activity_name']} ({selected_year})..."
+                                ):
+                                    success, total = recalculate_activity_dates_by_year(
+                                        client_id,
+                                        activity['activity_name'],
+                                        activity['frequency_type'],
+                                        activity['frequency_config'],
+                                        selected_year,
+                                    )
+                                    clear_cache_pattern(f"dates_{client_id}")
+
+                                if success:
+                                    st.success(
+                                        f"Fechas recalculadas para {activity['activity_name']} ({selected_year})."
+                                    )
+                                    st.rerun()
+                                else:
+                                    st.error("No se pudieron recalcular las fechas de la actividad.")
+                        else:
+                            st.button(
+                                "Recalcular",
+                                key=f"recalc_activity_{client_id}_{idx}",
+                                disabled=True,
+                                help="No disponible en producción",
+                            )
+
+                    with btn_col2:
+                        # Botón para eliminar actividad
+                        if not is_read_only_mode():
+                            if st.button("Eliminar", key=f"delete_{idx}", help="Eliminar actividad"):
+                                if delete_client_activity(client_id, activity['activity_name']):
+                                    st.success(f"Actividad '{activity['activity_name']}' eliminada")
+                                    st.rerun()
+                                else:
+                                    st.error("Error al eliminar la actividad")
+                        else:
+                            st.button("Eliminar", key=f"delete_{idx}", disabled=True, help="No disponible en producción")
             
             st.divider()
         

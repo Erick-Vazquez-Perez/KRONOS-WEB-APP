@@ -157,6 +157,31 @@ def recalculate_client_dates_by_year(client_id, year):
         except Exception as e:
             print(f"Error calculando fechas para {activity['activity_name']} en {year}: {e}")
 
+def recalculate_activity_dates_by_year(client_id, activity_name, frequency_type, frequency_config, year):
+    """Recalcula fechas para una actividad específica en un año dado, preservando otros años"""
+    if not activity_name or not frequency_type or not frequency_config:
+        print("Datos insuficientes para recalcular actividad")
+        return False, 0
+
+    try:
+        start_date = datetime(year, 1, 1).date()
+        all_dates = calculate_dates_for_frequency(
+            frequency_type,
+            frequency_config,
+            start_date,
+            full_year=True,
+        )
+
+        if not all_dates:
+            print(f"No se generaron fechas para {activity_name} en {year}")
+            return False, 0
+
+        save_calculated_dates_by_year_internal(client_id, activity_name, all_dates, year)
+        return True, len(all_dates)
+    except Exception as e:
+        print(f"Error recalculando {activity_name} en {year}: {e}")
+        return False, 0
+
 def save_calculated_dates_by_year_internal(client_id, activity_name, dates_list, year):
     """Guarda todas las fechas del año para una actividad específica usando la nueva función de BD"""
     if not dates_list:
