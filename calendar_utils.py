@@ -236,3 +236,111 @@ def get_available_months(client_id):
         return months.to_dict('records')
     except:
         return []
+
+def get_available_years(client_id):
+    """Obtiene la lista de años que tienen fechas programadas para un cliente"""
+    dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        return []
+    
+    try:
+        dates_df['date_obj'] = pd.to_datetime(dates_df['date'])
+        years = sorted(dates_df['date_obj'].dt.year.unique())
+        return years
+    except:
+        return []
+
+def create_client_calendar_table_by_year(client_id, year):
+    """Crea la tabla de calendario para un cliente filtrada por año específico"""
+    dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        recalculate_client_dates(client_id)
+        dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por año
+    try:
+        dates_df['date_obj'] = pd.to_datetime(dates_df['date'])
+        dates_df = dates_df[dates_df['date_obj'].dt.year == year]
+        
+        if dates_df.empty:
+            return pd.DataFrame()
+            
+        if 'activity_name' not in dates_df.columns:
+            return pd.DataFrame()
+        
+        activities = dates_df['activity_name'].unique()
+        
+        if len(activities) == 0:
+            return pd.DataFrame()
+        
+        return create_full_year_calendar_table(dates_df, activities)
+        
+    except Exception as e:
+        print(f"Error filtrando calendario por año {year}: {e}")
+        return pd.DataFrame()
+
+def get_client_year_summary_by_year(client_id, year):
+    """Obtiene un resumen del año específico para un cliente"""
+    dates_df = get_calculated_dates(client_id)
+    
+    if dates_df.empty:
+        return {
+            "total_fechas": 0,
+            "actividades": 0,
+            "meses_con_actividad": 0,
+            "proxima_fecha": None
+        }
+    
+    # Filtrar por año
+    try:
+        dates_df['date_obj'] = pd.to_datetime(dates_df['date'])
+        dates_df = dates_df[dates_df['date_obj'].dt.year == year]
+        
+        if dates_df.empty:
+            return {
+                "total_fechas": 0,
+                "actividades": 0,
+                "meses_con_actividad": 0,
+                "proxima_fecha": None
+            }
+        
+        # Calcular estadísticas
+        total_fechas = len(dates_df)
+        actividades = len(dates_df['activity_name'].unique())
+        
+        # Contar meses con actividad
+        dates_df['month'] = dates_df['date_obj'].dt.to_period('M')
+        meses_con_actividad = len(dates_df['month'].unique())
+        
+        # Encontrar próxima fecha del año especificado
+        today = datetime.now().date()
+        future_dates = dates_df[dates_df['date_obj'].dt.date >= today]
+        
+        proxima_fecha = None
+        if not future_dates.empty:
+            next_date = future_dates.sort_values('date').iloc[0]
+            proxima_fecha = {
+                "fecha": next_date['date'],
+                "actividad": next_date['activity_name']
+            }
+        
+        return {
+            "total_fechas": total_fechas,
+            "actividades": actividades,
+            "meses_con_actividad": meses_con_actividad,
+            "proxima_fecha": proxima_fecha
+        }
+        
+    except Exception as e:
+        print(f"Error obteniendo resumen del año {year}: {e}")
+        return {
+            "total_fechas": 0,
+            "actividades": 0,
+            "meses_con_actividad": 0,
+            "proxima_fecha": None
+        }

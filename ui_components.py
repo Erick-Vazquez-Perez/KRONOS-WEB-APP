@@ -1,28 +1,95 @@
 import streamlit as st
+import pydeck as pdk
 import json
 import sqlite3
 import pandas as pd
-import streamlit as st
-import pandas as pd
+import calendar
 from datetime import datetime, timedelta
+from auth_system import auth_system, require_permission, is_read_only_mode, get_user_country_filter, has_country_filter, get_current_user, UserRole
 from database import (
-    get_clients, get_client_by_id, add_client, update_client, delete_client,
+    get_clients, get_clients_summary, get_clients_batch, get_client_by_id, 
+    add_client, update_client, delete_client,
     get_frequency_templates, add_frequency_template, update_frequency_template,
     delete_frequency_template, get_frequency_usage_count,
-    get_client_activities, update_client_activity_frequency,
+    get_client_activities, get_multiple_client_activities, update_client_activity_frequency,
     add_client_activity, delete_client_activity,
-    get_calculated_dates, save_calculated_dates, update_calculated_date,
-    get_db_connection
+    get_calculated_dates, get_multiple_calculated_dates, save_calculated_dates, update_calculated_date,
+    get_db_connection, get_cache_stats, clear_cache_pattern,
+    get_clients_with_matching_frequencies, copy_dates_to_clients, get_client_activity_summary,
+    get_clients_with_default_activities_only, copy_frequencies_to_clients
 )
-from date_calculator import recalculate_client_dates
-from calendar_utils import create_client_calendar_table, format_frequency_description
+from date_calculator import recalculate_client_dates, recalculate_client_dates_by_year, recalculate_activity_dates_by_year
+from calendar_utils import create_client_calendar_table, format_frequency_description, create_client_calendar_table_by_year, get_client_year_summary_by_year, get_available_years
+from client_constants import get_tipos_cliente, get_regiones, get_paises
+from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
+from werfen_styles import get_client_card_html, get_metric_card_html, get_calendar_header_html, get_button_html
 import sqlite3
+
+FILTER_STATE_KEYS = [
+    "client_search",
+    "csr_filter",
+    "vendedor_filter",
+    "tipo_filter",
+    "region_filter",
+    "calendario_sap_filter",
+    "pais_filter",
+    "estado_filter",
+    "ciudad_filter",
+    "sort_filter",
+    "view_mode",
+    "preview_year",
+]
+
+def _mark_filters_for_reset():
+    st.session_state["_reset_client_filters"] = True
+
+
+def _apply_pending_filter_reset():
+    if not st.session_state.get("_reset_client_filters"):
+        return
+    st.session_state["client_search"] = ""
+    st.session_state["csr_filter"] = "Todos"
+    st.session_state["vendedor_filter"] = "Todos"
+    st.session_state["tipo_filter"] = "Todos"
+    st.session_state["region_filter"] = "Todos"
+    st.session_state["calendario_sap_filter"] = "Todos"
+    st.session_state["estado_filter"] = "Todos"
+    st.session_state["ciudad_filter"] = "Todos"
+    st.session_state["sort_filter"] = "Nombre A-Z"
+    st.session_state["preview_year"] = datetime.now().year
+    if has_country_filter():
+        if "pais_filter" in st.session_state:
+            del st.session_state["pais_filter"]
+    else:
+        st.session_state["pais_filter"] = "Todos"
+    st.session_state.pop("_reset_client_filters", None)
+
+def snapshot_client_filters():
+    """Guarda el estado actual de los filtros de clientes"""
+    st.session_state["client_filters_snapshot"] = {
+        key: st.session_state.get(key) for key in FILTER_STATE_KEYS if key in st.session_state
+    }
+
+
+def restore_client_filters_from_snapshot():
+    """Restaura los filtros guardados al volver a la galería"""
+    snapshot = st.session_state.get("client_filters_snapshot")
+    if snapshot:
+        st.session_state.update(snapshot)
 
 # ========== FUNCIONES DE GALERÍA Y NAVEGACIÓN ==========
 
 def show_clients_gallery():
     """Muestra la galería de clientes"""
-    st.header("Clientes Kronos")
+    st.header("Clientes Green Logistics")
+
+    # Aplicar reset pendiente antes de renderizar widgets
+    _apply_pending_filter_reset()
+    
+    # Mostrar filtro de país activo si aplica
+    if has_country_filter():
+        country_filter = get_user_country_filter()
+        st.info(f"Vista filtrada: Solo clientes de **{country_filter}**")
     
     # Si se está mostrando el detalle del cliente
     if st.session_state.get('show_client_detail', False) and st.session_state.get('selected_client'):
@@ -35,18 +102,42 @@ def show_clients_gallery():
     if 'show_client_detail' in st.session_state:
         st.session_state.show_client_detail = False
     
-    clients = get_clients()
+    clients = get_clients(use_cache=True)
     
     if clients.empty:
         st.info("No hay clientes registrados. Agrega un cliente para comenzar.")
+        
+        # Debug adicional
+        try:
+            st.write("DEBUG: Intentando consulta directa...")
+            from database import get_pooled_connection, return_pooled_connection
+            conn = get_pooled_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM clients")
+            count = cursor.fetchone()[0]
+            st.write(f"DEBUG: Consulta directa encontró {count} clientes")
+            return_pooled_connection(conn)
+        except Exception as e:
+            st.write(f"DEBUG: Error en consulta directa: {e}")
+        
         return
+
+    if st.session_state.get("restore_filters_on_gallery"):
+        restore_client_filters_from_snapshot()
+        st.session_state["restore_filters_on_gallery"] = False
+
+    st.session_state.setdefault("client_search", "")
+
+    def _clear_client_search():
+        """Reset de búsqueda de clientes"""
+        st.session_state["client_search"] = ""
     
     # Fila superior: búsqueda de texto
     col1, col2 = st.columns([3, 1])
     
     with col1:
         search_term = st.text_input(
-            "Buscar por nombre, código AG, CSR o vendedor:",
+            "Buscar por nombre, código AG, CSR, vendedor, tipo o región:",
             placeholder="Ingresa tu búsqueda...",
             key="client_search",
             help="Busca clientes por cualquiera de sus campos principales"
@@ -54,65 +145,150 @@ def show_clients_gallery():
     
     with col2:
         # Botón para limpiar búsqueda
-        if st.button("🗑️ Limpiar", key="clear_search", help="Limpiar búsqueda"):
-            # Eliminar la key del session_state para que se reinicialice
-            if "client_search" in st.session_state:
-                del st.session_state["client_search"]
-            st.rerun()
+        st.button(
+            "Limpiar",
+            key="clear_search",
+            help="Limpiar búsqueda",
+            on_click=_clear_client_search
+        )
     
     # Fila inferior: filtros adicionales
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-    
-    with col1:
-        # Filtro por CSR
+    # Primera fila de filtros
+    row1_col1, row1_col2, row1_col3, row1_col4, row1_col5, row1_col6, _row1_spacer = st.columns([2, 2, 2, 2, 2, 2, 1])
+
+    with row1_col1:
         csr_options = ['Todos'] + sorted([csr for csr in clients['csr'].dropna().unique() if csr])
         selected_csr = st.selectbox(
             "Filtrar por CSR:",
             csr_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="csr_filter"
         )
-    
-    with col2:
-        # Filtro por vendedor
+
+    with row1_col2:
         vendedor_options = ['Todos'] + sorted([vendedor for vendedor in clients['vendedor'].dropna().unique() if vendedor])
         selected_vendedor = st.selectbox(
             "Filtrar por Vendedor:",
             vendedor_options,
-            index=0,  # Siempre empezar con "Todos"
+            index=0,
             key="vendedor_filter"
         )
-    
-    with col3:
-        # Ordenar por
-        sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor']
+
+    with row1_col3:
+        tipo_options = ['Todos'] + get_tipos_cliente()
+        selected_tipo = st.selectbox(
+            "Filtrar por Tipo:",
+            tipo_options,
+            index=0,
+            key="tipo_filter"
+        )
+
+    with row1_col4:
+        region_options = ['Todos'] + get_regiones()
+        selected_region = st.selectbox(
+            "Filtrar por Región:",
+            region_options,
+            index=0,
+            key="region_filter"
+        )
+
+    with row1_col5:
+        if 'calendario_sap' in clients.columns:
+            calendario_sap_values = (
+                clients['calendario_sap']
+                .fillna('')
+                .astype(str)
+                .map(lambda x: x.strip())
+            )
+            calendario_sap_options = ['Todos'] + sorted([v for v in calendario_sap_values.unique() if v])
+        else:
+            calendario_sap_options = ['Todos']
+
+        selected_calendario_sap = st.selectbox(
+            "Filtrar por Calendario SAP:",
+            calendario_sap_options,
+            index=0,
+            key="calendario_sap_filter"
+        )
+
+    with row1_col6:
+        pais_options = ['Todos'] + get_paises()
+        if has_country_filter():
+            country_filter = get_user_country_filter()
+            selected_pais = st.selectbox(
+                "Filtrar por País:",
+                [country_filter],
+                index=0,
+                key="pais_filter",
+                disabled=True,
+                help=f"Tu usuario solo tiene acceso a clientes de {country_filter}"
+            )
+        else:
+            selected_pais = st.selectbox(
+                "Filtrar por País:",
+                pais_options,
+                index=0,
+                key="pais_filter"
+            )
+
+    # Segunda fila de filtros
+    row2_col1, row2_col2, row2_col3, row2_col4, row2_col5 = st.columns([2, 2, 2, 2, 1])
+
+    with row2_col1:
+        estado_options = ['Todos'] + sorted([e for e in clients.get('estado', pd.Series()).fillna('').astype(str).unique() if e])
+        selected_estado = st.selectbox(
+            "Filtrar por Estado:",
+            estado_options,
+            index=0,
+            key="estado_filter"
+        )
+
+    with row2_col2:
+        ciudad_options = ['Todos'] + sorted([c for c in clients.get('ciudad', pd.Series()).fillna('').astype(str).unique() if c])
+        selected_ciudad = st.selectbox(
+            "Filtrar por Ciudad:",
+            ciudad_options,
+            index=0,
+            key="ciudad_filter"
+        )
+
+    with row2_col3:
+        sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región', 'País']
         sort_by = st.selectbox(
             "Ordenar por:",
             sort_options,
-            index=0,  # Siempre empezar con "Nombre A-Z"
+            index=0,
             key="sort_filter"
         )
-    
-    with col4:
-        st.write("")  # Espacio para alinear el botón
-        if st.button("🔄 Limpiar Filtros", key="clear_all_filters", help="Limpiar todos los filtros"):
-            # Eliminar todas las keys de los filtros para que se reinicialicen
-            filter_keys = ["client_search", "csr_filter", "vendedor_filter", "sort_filter"]
-            for key in filter_keys:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+
+    with row2_col5:
+        st.write("")
+        st.button(
+            "Limpiar Filtros",
+            key="clear_all_filters",
+            help="Limpiar todos los filtros",
+            on_click=_mark_filters_for_reset
+        )
+
+
     
     # Filtrar clientes basado en los criterios seleccionados
     filtered_clients = clients.copy()
     
     # Aplicar filtro de texto (verificar que no sea None o vacío)
     if search_term and search_term.strip():
+        term = search_term
         filtered_clients = filtered_clients[
-            filtered_clients['name'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['codigo_ag'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['csr'].str.contains(search_term, case=False, na=False) |
-            filtered_clients['vendedor'].str.contains(search_term, case=False, na=False)
+            filtered_clients['name'].str.contains(term, case=False, na=False) |
+            filtered_clients['codigo_ag'].str.contains(term, case=False, na=False) |
+            filtered_clients['csr'].str.contains(term, case=False, na=False) |
+            filtered_clients['vendedor'].str.contains(term, case=False, na=False) |
+            filtered_clients['tipo_cliente'].str.contains(term, case=False, na=False) |
+            filtered_clients['region'].str.contains(term, case=False, na=False) |
+            (filtered_clients['pais'].fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('estado', pd.Series()).fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('ciudad', pd.Series()).fillna('').str.contains(term, case=False, na=False)) |
+            (filtered_clients.get('numero_tarea_sap', pd.Series()).astype(str).str.contains(term, case=False, na=False))
         ]
     
     # Aplicar filtro de CSR
@@ -122,6 +298,35 @@ def show_clients_gallery():
     # Aplicar filtro de vendedor
     if selected_vendedor and selected_vendedor != 'Todos':
         filtered_clients = filtered_clients[filtered_clients['vendedor'] == selected_vendedor]
+    
+    # Aplicar filtro de tipo de cliente
+    if selected_tipo and selected_tipo != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients['tipo_cliente'] == selected_tipo]
+    
+    # Aplicar filtro de región
+    if selected_region and selected_region != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients['region'] == selected_region]
+
+    # Aplicar filtro de calendario SAP
+    if (
+        'calendario_sap' in filtered_clients.columns
+        and selected_calendario_sap
+        and selected_calendario_sap != 'Todos'
+    ):
+        filtered_clients = filtered_clients[
+            filtered_clients['calendario_sap'].fillna('').astype(str).map(lambda x: x.strip()) == selected_calendario_sap
+        ]
+    
+    # Aplicar filtro de país (solo si el usuario no tiene un filtro fijo)
+    if not has_country_filter():
+        if selected_pais and selected_pais != 'Todos':
+            filtered_clients = filtered_clients[filtered_clients['pais'] == selected_pais]
+
+    if selected_estado and selected_estado != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients.get('estado', '').fillna('') == selected_estado]
+
+    if selected_ciudad and selected_ciudad != 'Todos':
+        filtered_clients = filtered_clients[filtered_clients.get('ciudad', '').fillna('') == selected_ciudad]
     
     # Aplicar ordenamiento
     if sort_by == 'Nombre A-Z':
@@ -134,6 +339,12 @@ def show_clients_gallery():
         filtered_clients = filtered_clients.sort_values('csr', ascending=True, na_position='last')
     elif sort_by == 'Vendedor':
         filtered_clients = filtered_clients.sort_values('vendedor', ascending=True, na_position='last')
+    elif sort_by == 'Tipo':
+        filtered_clients = filtered_clients.sort_values('tipo_cliente', ascending=True, na_position='last')
+    elif sort_by == 'Región':
+        filtered_clients = filtered_clients.sort_values('region', ascending=True, na_position='last')
+    elif sort_by == 'País':
+        filtered_clients = filtered_clients.sort_values('pais', ascending=True, na_position='last')
     
     # Verificar si hay resultados
     if filtered_clients.empty:
@@ -141,10 +352,10 @@ def show_clients_gallery():
         
         # Mostrar sugerencias para ajustar la búsqueda
         st.info("""
-        💡 **Sugerencias:**
+        **Sugerencias:**
         - Intenta con términos de búsqueda más generales
-        - Revisa los filtros seleccionados (CSR, Vendedor)
-        - Usa el botón 'Limpiar' para resetear la búsqueda
+        - Revisa los filtros seleccionados (CSR, Vendedor, Tipo, Región, Calendario SAP, País)
+        - Usa el botón 'Limpiar Filtros' para resetear todos los filtros
         """)
         return
     
@@ -153,9 +364,10 @@ def show_clients_gallery():
     shown_clients = len(filtered_clients)
     
     if shown_clients == total_clients:
-        st.info(f"📊 Mostrando todos los clientes ({total_clients} total)")
+        st.info(f"Mostrando todos los clientes ({total_clients} total)")
     else:
-        st.info(f"📊 Mostrando {shown_clients} de {total_clients} clientes")
+        pass
+        st.info(f"Mostrando {shown_clients} de {total_clients} clientes")
         
         # Mostrar filtros activos
         active_filters = []
@@ -165,34 +377,74 @@ def show_clients_gallery():
             active_filters.append(f"CSR: {selected_csr}")
         if selected_vendedor != 'Todos':
             active_filters.append(f"Vendedor: {selected_vendedor}")
+        if selected_tipo != 'Todos':
+            active_filters.append(f"Tipo: {selected_tipo}")
+        if selected_region != 'Todos':
+            active_filters.append(f"Región: {selected_region}")
+        if selected_calendario_sap != 'Todos':
+            active_filters.append(f"Calendario SAP: {selected_calendario_sap}")
+        if selected_pais != 'Todos':
+            active_filters.append(f"País: {selected_pais}")
+        if selected_estado != 'Todos':
+            active_filters.append(f"Estado: {selected_estado}")
+        if selected_ciudad != 'Todos':
+            active_filters.append(f"Ciudad: {selected_ciudad}")
         if sort_by != 'Nombre A-Z':
             active_filters.append(f"Orden: {sort_by}")
         
         if active_filters:
-            st.caption(f"� Filtros activos: {' • '.join(active_filters)}")
+            st.caption(f"Filtros activos: {' | '.join(active_filters)}")
     
     clients_to_show = filtered_clients
     
-    # Selector de vista
-    col1, col2 = st.columns([1, 3])
+    # Selector de vista + año (para preview)
+    col1, col2, _spacer = st.columns([1, 1, 2])
     with col1:
+        view_options = ["Galería", "Lista", "Mapa"]
+        default_view_mode = st.session_state.get("view_mode", "Galería")
+        if default_view_mode not in view_options:
+            default_view_mode = "Galería"
         view_mode = st.selectbox(
             "Vista:",
-            ["Galería", "Lista"],
+            view_options,
+            index=view_options.index(default_view_mode),
             key="view_mode",
             help="Selecciona cómo mostrar los clientes"
         )
+    with col2:
+        current_year = datetime.now().year
+        year_options = list(range(current_year - 2, current_year + 6))
+        # Garantizar coherencia del estado antes de renderizar el widget para evitar advertencias
+        if "preview_year" not in st.session_state:
+            st.session_state["preview_year"] = current_year
+        if st.session_state["preview_year"] not in year_options:
+            st.session_state["preview_year"] = current_year
+
+        preview_year = st.selectbox(
+            "Año:",
+            year_options,
+            key="preview_year",
+            help="Año usado para el preview de fechas por cliente"
+        )
+    
+    # Mostrar nombre del mes actual debajo del selector de vista
+    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    current_month_name = months[datetime.now().month - 1]
+    st.markdown(f"#### Mostrando fechas de {current_month_name} {preview_year}")
     
     st.divider()
-    
+
     # Mostrar clientes según la vista seleccionada
     if view_mode == "Lista":
-        show_clients_list_view(clients_to_show)
+        show_clients_list_view(clients_to_show, preview_year)
+    elif view_mode == "Mapa":
+        show_clients_map_view(clients_to_show)
     else:
-        show_clients_gallery_view(clients_to_show)
+        show_clients_gallery_view(clients_to_show, preview_year)
 
-def get_client_current_month_data(client_id):
-    """Obtiene los datos del mes actual para un cliente específico (vista compacta)"""
+def get_client_current_month_data(client_id, year):
+    """Obtiene los datos del mes actual y año seleccionado para un cliente específico (vista compacta)"""
     dates_df = get_calculated_dates(client_id)
     
     if dates_df.empty:
@@ -206,7 +458,7 @@ def get_client_current_month_data(client_id):
     for _, row in dates_df.iterrows():
         try:
             date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
-            if date_obj.month == current_month:
+            if date_obj.month == current_month and date_obj.year == year:
                 # Mapear meses al español para formato abreviado
                 months_spanish = {
                     1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
@@ -264,71 +516,61 @@ def get_client_current_month_data(client_id):
     else:
         return None
 
-def show_clients_gallery_view(clients_to_show):
+def show_clients_gallery_view(clients_to_show, preview_year):
     """Muestra los clientes en vista de galería (tarjetas)"""
-    # Mostrar galería de clientes
-    cols = st.columns(3)
     
-    for idx, (_, client) in enumerate(clients_to_show.iterrows()):
-        with cols[idx % 3]:
-            with st.container():
-                st.markdown(f"""
-                <div style="border: 1px solid #ddd; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #f9f9f9;">
-                    <h4 style="margin: 0 0 10px 0; color: #2c3e50;">{client['name']}</h4>
-                    <p style="margin: 5px 0; font-size: 14px;"><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
-                    <p style="margin: 5px 0; font-size: 14px;"><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
-                    <p style="margin: 5px 0; font-size: 14px;"><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Mostrar vista del mes actual
-                try:
-                    current_month_df = get_client_current_month_data(client['id'])
-                    if current_month_df is not None and not current_month_df.empty:
-                        # Obtener nombre del mes actual
-                        months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-                        current_month_name = months[datetime.now().month - 1]
-                        
-                        st.markdown(f"{current_month_name}")
-                        # Calcular altura dinámica basada en número de filas
-                        num_rows = len(current_month_df)
-                        dynamic_height = min(max(num_rows * 35 + 60, 150), 400)  # Altura entre 150 y 400px
-                        
-                        st.dataframe(
-                            current_month_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=dynamic_height,
-                            column_config={
-                                'Actividad': st.column_config.TextColumn(
-                                    'Actividad',
-                                    width='medium'
-                                )
-                            }
-                        )
-                    else:
-                        current_month_name = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                                            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][datetime.now().month - 1]
-                        st.markdown(f"**📅 {current_month_name}**")
-                        st.write("Sin actividades este mes")
-                except Exception as e:
-                    st.write("📅 Sin calendario configurado")
-                
-                # Botón para ver detalle
-                if st.button(f"Ver Detalle", key=f"detail_{client['id']}"):
-                    # Limpiar estados previos
-                    for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
-                              'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
-                        if key in st.session_state:
-                            del st.session_state[key]
+    # Crear contenedor scrolleable con altura fija
+    with st.container(height=840):
+        # Mostrar galería de clientes
+        cols = st.columns(3)
+        
+        for idx, (_, client) in enumerate(clients_to_show.iterrows()):
+            with cols[idx % 3]:
+                with st.container():
+                    # Usar el HTML personalizado de Werfen
+                    st.markdown(get_client_card_html(client), unsafe_allow_html=True)
                     
-                    # Establecer nuevo cliente
-                    st.session_state.selected_client = int(client['id'])
-                    st.session_state.show_client_detail = True
-                    st.rerun()
+                    # Mostrar vista del mes actual (datos solamente, sin título del mes)
+                    try:
+                        current_month_df = get_client_current_month_data(client['id'], preview_year)
+                        if current_month_df is not None and not current_month_df.empty:
+                            # Calcular altura dinámica basada en número de filas
+                            num_rows = len(current_month_df)
+                            dynamic_height = min(max(num_rows * 35 + 60, 150), 250)  # Altura entre 150 y 250px (más reducida)
+                            
+                            st.dataframe(
+                                current_month_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=dynamic_height,
+                                column_config={
+                                    'Actividad': st.column_config.TextColumn(
+                                        'Actividad',
+                                        width='medium'
+                                    )
+                                }
+                            )
+                        else:
+                            st.write("Sin actividades este mes")
+                    except Exception as e:
+                        st.write("Sin calendario configurado")
+                    
+                    # Botón para ver detalle
+                    if st.button("Ver Detalle", key=f"detail_{client['id']}", use_container_width=True):
+                        # Limpiar estados previos
+                        for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
+                                  'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
+                        # Establecer nuevo cliente
+                        snapshot_client_filters()
+                        st.session_state["restore_filters_on_gallery"] = True
+                        st.session_state.selected_client = int(client['id'])
+                        st.session_state.show_client_detail = True
+                        st.rerun()
 
-def show_clients_list_view(clients_to_show):
+def show_clients_list_view(clients_to_show, preview_year):
     """Muestra los clientes en vista de lista (tabla)"""
     if clients_to_show.empty:
         st.info("No hay clientes para mostrar")
@@ -343,13 +585,17 @@ def show_clients_list_view(clients_to_show):
             'Código WE': client['codigo_we'] or 'N/A',
             'CSR': client['csr'] or 'N/A',
             'Vendedor': client['vendedor'] or 'N/A',
+            'Tipo Cliente': client.get('tipo_cliente', 'N/A') or 'N/A',
+            'Región': client.get('region', 'N/A') or 'N/A',
+            'Estado': client.get('estado', '') or 'N/A',
+            'Ciudad': client.get('ciudad', '') or 'N/A',
             'ID': client['id']
         })
     
     # Mostrar tabla
     for i, client_data in enumerate(display_data):
         with st.container():
-            col1, col2, col3, col4, col5, col6 = st.columns([3, 2, 2, 2, 2, 1])
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1])
             
             with col1:
                 st.markdown(f"**{client_data['Nombre']}**")
@@ -367,7 +613,15 @@ def show_clients_list_view(clients_to_show):
                 st.write(f"Vendedor: {client_data['Vendedor']}")
             
             with col6:
-                if st.button("👁️", key=f"list_detail_{client_data['ID']}", help="Ver detalle"):
+                st.write(f"Tipo: {client_data['Tipo Cliente']}")
+            
+            with col7:
+                st.write(f"Región: {client_data['Región']}")
+                st.write(f"Estado: {client_data['Estado']}")
+                st.write(f"Ciudad: {client_data['Ciudad']}")
+            
+            with col8:
+                if st.button("Ver", key=f"list_detail_{client_data['ID']}"):
                     # Limpiar estados previos
                     for key in ['show_edit_modal', 'edit_name', 'edit_codigo_ag', 'edit_codigo_we', 
                               'edit_csr', 'edit_vendedor', 'edit_calendario_sap']:
@@ -375,6 +629,8 @@ def show_clients_list_view(clients_to_show):
                             del st.session_state[key]
                     
                     # Establecer nuevo cliente
+                    snapshot_client_filters()
+                    st.session_state["restore_filters_on_gallery"] = True
                     st.session_state.selected_client = int(client_data['ID'])
                     st.session_state.show_client_detail = True
                     st.rerun()
@@ -382,6 +638,135 @@ def show_clients_list_view(clients_to_show):
             # Separador entre filas
             if i < len(display_data) - 1:
                 st.divider()
+
+
+def _normalize_state_key(state: str) -> str:
+    if not state:
+        return ""
+    replacements = {
+        "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u",
+        "Á": "a", "É": "e", "Í": "i", "Ó": "o", "Ú": "u", "Ü": "u",
+    }
+    norm = state.strip()
+    for k, v in replacements.items():
+        norm = norm.replace(k, v)
+    return norm.lower()
+
+
+MEXICO_STATE_COORDS = {
+    "aguascalientes": (21.8853, -102.2916),
+    "baja california": (30.8406, -115.2838),
+    "baja california sur": (26.0444, -111.6661),
+    "campeche": (19.8301, -90.5349),
+    "chiapas": (16.7569, -93.1292),
+    "chihuahua": (28.6320, -106.0691),
+    "ciudad de mexico": (19.4326, -99.1332),
+    "cdmx": (19.4326, -99.1332),
+    "coahuila": (27.0587, -101.7068),
+    "colima": (19.2452, -103.7241),
+    "durango": (24.0277, -104.6532),
+    "guanajuato": (21.0190, -101.2574),
+    "guerrero": (17.4392, -99.5451),
+    "hidalgo": (20.1011, -98.7591),
+    "jalisco": (20.6597, -103.3496),
+    "mexico": (19.2921, -99.6557),
+    "estado de mexico": (19.2921, -99.6557),
+    "edomex": (19.2921, -99.6557),
+    "michoacan": (19.5665, -101.7068),
+    "morelos": (18.6813, -99.1013),
+    "nayarit": (21.7514, -104.8455),
+    "nuevo leon": (25.5922, -99.9962),
+    "oaxaca": (17.0732, -96.7266),
+    "puebla": (19.0413, -98.2062),
+    "queretaro": (20.5888, -100.3899),
+    "quintana roo": (19.1817, -88.4791),
+    "san luis potosi": (22.1565, -100.9855),
+    "sinaloa": (24.8091, -107.3940),
+    "sonora": (29.2972, -110.3309),
+    "tabasco": (17.8409, -92.6189),
+    "tamaulipas": (24.2669, -98.8363),
+    "tlaxcala": (19.3182, -98.2375),
+    "veracruz": (19.1738, -96.1342),
+    "yucatan": (20.7099, -89.0943),
+    "zacatecas": (22.7709, -102.5832),
+}
+
+
+def show_clients_map_view(clients_to_show):
+    """Muestra un mapa de México con clientes por estado"""
+    if clients_to_show.empty:
+        st.info("No hay clientes para mostrar en el mapa")
+        return
+
+    mexico_clients = clients_to_show[
+        clients_to_show.get('pais', '').fillna('').str.lower().str.contains('mexico|méxico')
+    ]
+
+    if mexico_clients.empty:
+        st.info("Selecciona México para ver el mapa de clientes por estado")
+        return
+
+    grouped = []
+    for state, group in mexico_clients.groupby('estado'):
+        key = _normalize_state_key(state)
+        coords = MEXICO_STATE_COORDS.get(key)
+        if not coords:
+            continue
+        client_names = sorted(group['name'].fillna('Sin nombre').tolist())
+        grouped.append({
+            'Estado': state or 'Sin estado',
+            'count': len(group),
+            'clients': " | ".join(client_names),
+            'lat': coords[0],
+            'lon': coords[1],
+        })
+
+    if not grouped:
+        st.info("No hay estados con clientes mapeables en México")
+        return
+
+    map_df = pd.DataFrame(grouped)
+    st.subheader("Clientes por estado (México)")
+
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=map_df,
+        get_position='[lon, lat]',
+        get_radius="10000 + (count * 2000)",
+        get_fill_color=[6, 3, 141, 180],
+        pickable=True,
+        auto_highlight=True,
+    )
+
+    view_state = pdk.ViewState(latitude=23.6345, longitude=-102.5528, zoom=4.2, pitch=0)
+
+    tooltip = {
+        "html": "<b>{Estado}</b><br/>Clientes: {count}<br/>{clients}",
+        "style": {
+            "font-family": "Arial",
+            "color": "#0f172a",
+            "font-size": "12px",
+            "backgroundColor": "#ffffff",
+            "border": "1px solid #cbd5e1",
+            "borderRadius": "8px",
+            "padding": "8px 10px",
+            "boxShadow": "0 4px 12px rgba(15, 23, 42, 0.12)",
+        },
+    }
+
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            # Basemap claro sin requerir token (Carto Positron)
+            map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        )
+    )
+
+    st.markdown("### Detalle por estado")
+    display_df = map_df[['Estado', 'count', 'clients']].rename(columns={'count': 'Clientes', 'clients': 'Listado'})
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # ========== FUNCIONES DE DETALLE DEL CLIENTE CON EDICIÓN MEJORADA ==========
 
@@ -394,6 +779,16 @@ def show_client_detail():
         st.rerun()
         return
     
+    # Forzar scroll al inicio al entrar al detalle
+    st.markdown(
+        """
+        <script>
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
     client_id = st.session_state.selected_client
     
     # NO limpiar estados de confirmación aquí, solo claves de botones duplicadas
@@ -410,7 +805,7 @@ def show_client_detail():
         st.error("Cliente no encontrado. Es posible que haya sido eliminado.")
         
         # Botón para regresar a la galería
-        if st.button("← Regresar a la Galería"):
+        if st.button("← Regresar a galería"):
             st.session_state.show_client_detail = False
             st.session_state.selected_client = None
             # Limpiar estados de edición
@@ -423,7 +818,7 @@ def show_client_detail():
     # Botones de navegación y acciones
     col1, col2, col3 = st.columns([1, 1, 6])
     with col1:
-        if st.button("← Regresar"):
+        if st.button("← Regresar a galería"):
             st.session_state.show_client_detail = False
             st.session_state.selected_client = None
             # Limpiar estados de edición
@@ -433,19 +828,22 @@ def show_client_detail():
             st.rerun()
     
     with col2:
-        if st.button("✏️ Editar Cliente"):
-            st.session_state.show_edit_modal = True
-            st.rerun()
+        if not is_read_only_mode():
+            if st.button("Editar Cliente"):
+                st.session_state.show_edit_modal = True
+                st.rerun()
+        else:
+            st.button("Editar Cliente", disabled=True, help="No disponible para tu usuario")
     
     # Mostrar modal de edición si está activado
     if st.session_state.get('show_edit_modal', False):
         show_edit_modal_improved(client)  # Usar la función mejorada
         return
     
-    st.header(f"📋 Detalle del Cliente: {client['name']}")
+    st.header(f"Detalle del Cliente: {client['name']}")
     
     # Información del cliente
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
         **Nombre:** {client['name']}  
@@ -461,51 +859,130 @@ def show_client_detail():
     with col3:
         st.markdown(f"""
         **Vendedor:** {client['vendedor'] or 'N/A'}  
-        **Calendario SAP:** {client['calendario_sap'] or 'N/A'}
+        **Calendario SAP:** {client['calendario_sap'] or 'N/A'}  
+        **Número tarea SAP:** {client.get('numero_tarea_sap') or 'N/A'}
+        """)
+    
+    with col4:
+        st.markdown(f"""
+        **Tipo Cliente:** {client.get('tipo_cliente', 'N/A')}  
+        **Región:** {client.get('region', 'N/A')}  
+        **País:** {client.get('pais', 'N/A')}  
+        **Estado:** {client.get('estado') or 'N/A'}  
+        **Ciudad:** {client.get('ciudad') or 'N/A'}
         """)
     
     st.divider()
     
     # ========== SECCIÓN MEJORADA DE CALENDARIO CON EDICIÓN ==========
-    st.subheader("📅 Calendario de Actividades")
+    st.subheader("Calendario de Actividades")
     
-    # Controles de vista mejorados
-    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+    # Controles de vista mejorados - Añadiendo selector de año
+    col1, col2, col3, col4, col5 = st.columns([2.5, 1.5, 1.5, 1.5, 1])
     
     with col1:
+        # Configurar opciones de vista según el modo
+        if is_read_only_mode():
+            view_options = ["Calendario", "Vista por Mes"]
+        else:
+            view_options = ["Calendario", "Vista por Mes", "Edición por Año"]
+
+        # Predeterminar vista "Calendario"
+        default_view = "Calendario"
+        default_view_index = view_options.index(default_view) if default_view in view_options else 0
+        
         view_type = st.selectbox(
             "Vista del calendario:",
-            ["Vista por Mes", "Edición por Año", "Año Completo"],
+            view_options,
+            index=default_view_index,
             help="Selecciona cómo quieres ver el calendario",
             key=f"view_type_{client_id}"
         )
     
     with col2:
-        if view_type == "Vista por Mes":
+        # Selector de año - solo años con fechas disponibles
+        available_years = get_available_years(client_id)
+        current_year = datetime.now().year
+        
+        if available_years:
+            # Si hay años disponibles, usar esos
+            year_options = available_years
+            # Default: año actual si está disponible, sino el más cercano
+            if current_year in year_options:
+                default_index = year_options.index(current_year)
+            else:
+                # Encontrar el año más cercano al actual
+                closest_year = min(year_options, key=lambda x: abs(x - current_year))
+                default_index = year_options.index(closest_year)
+        else:
+            # Si no hay fechas, mostrar años estándar
+            year_options = list(range(current_year - 3, current_year + 5))
+            default_index = year_options.index(current_year)
+        
+        selected_year = st.selectbox(
+            "Año:",
+            year_options,
+            index=default_index,
+            help=f"Años con fechas: {', '.join(map(str, available_years)) if available_years else 'Ninguno'}",
+            key=f"year_selector_{client_id}"
+        )
+    
+    with col3:
+        if view_type in ("Vista por Mes", "Calendario"):
             # Selector de mes para vista mensual
             months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
             
             selected_month = st.selectbox(
-                "Selecciona el mes:",
+                "Mes:",
                 months,
                 index=datetime.now().month - 1,  # Mes actual como default
                 key=f"month_selector_{client_id}"
             )
-    
-    with col3:
-        # Información adicional según la vista
-        if view_type == "Vista por Mes":
-            st.write("*Vista de solo lectura*")
-        elif view_type == "Edición por Año":
-            st.write("*Vista editable*")
+        else:
+            # Para otras vistas, mostrar información del año
+            st.write(f"**Año {selected_year}**")
     
     with col4:
-        if st.button("🔄 Recalcular", key=f"recalc_{client_id}"):
-            with st.spinner("Recalculando fechas..."):
-                recalculate_client_dates(client_id)
-            st.success("✅ Fechas recalculadas")
-            st.rerun()
+        # Información adicional según la vista
+        if view_type == "Vista por Mes":
+            st.write("*Vista mensual*")
+        elif view_type == "Calendario":
+            st.write("*Vista calendario*")
+        elif view_type == "Edición por Año":
+            if not is_read_only_mode():
+                st.write("*Vista editable*")
+    
+    with col5:
+        if not is_read_only_mode():
+            # Key para el estado de confirmación del recálculo
+            confirm_recalc_key = f'confirm_recalc_{client_id}'
+            is_confirm_recalc = st.session_state.get(confirm_recalc_key, False)
+            
+            button_text = "CONFIRMAR" if is_confirm_recalc else "Recalcular Fechas"
+            button_type = "primary" if is_confirm_recalc else "secondary"
+            
+            if st.button(button_text, key=f"recalc_{client_id}", type=button_type):
+                if is_confirm_recalc:
+                    # Segunda presión: ejecutar recálculo
+                    with st.spinner(f"Recalculando fechas para {selected_year}..."):
+                        recalculate_client_dates_by_year(client_id, selected_year)
+                    st.success(f"Fechas recalculadas para {selected_year}")
+                    st.session_state[confirm_recalc_key] = False
+                    st.rerun()
+                else:
+                    # Primera presión: pedir confirmación
+                    st.session_state[confirm_recalc_key] = True
+                    st.rerun()
+            
+            # Mostrar mensaje de confirmación y botón cancelar
+            if is_confirm_recalc:
+                st.warning(f"Confirmar recálculo de fechas de **{client['name']}** para **{selected_year}**")
+                if st.button("Cancelar", key=f"cancel_recalc_{client_id}"):
+                    st.session_state[confirm_recalc_key] = False
+                    st.rerun()
+        else:
+            st.button("Recalcular Fechas", key=f"recalc_{client_id}", disabled=True, help="No disponible en producción")
     
     # Información de estado del calendario
     dates_df = get_calculated_dates(client_id)
@@ -513,60 +990,22 @@ def show_client_detail():
         total_dates = len(dates_df)
         activities_count = len(dates_df['activity_name'].unique())
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            st.metric("📅 Total de Fechas", total_dates)
+            st.metric("Total de Fechas", total_dates)
         with col2:
-            st.metric("📋 Actividades", activities_count)
-        with col3:
-            # Próxima fecha
-            try:
-                future_dates = dates_df[pd.to_datetime(dates_df['date']) > datetime.now()]
-                if not future_dates.empty:
-                    next_date = future_dates.iloc[0]['date']
-                    next_date_obj = datetime.strptime(next_date, '%Y-%m-%d')
-                    days_until = (next_date_obj - datetime.now()).days
-                    st.metric("📆 Próxima Fecha", f"{days_until} días")
-                else:
-                    st.metric("📆 Próxima Fecha", "N/A")
-            except:
-                st.metric("📆 Próxima Fecha", "N/A")
+            st.metric("Actividades", activities_count)
     
     # Mostrar vista según selección
     try:
         if view_type == "Vista por Mes":
-            show_monthly_readonly_calendar(client_id, selected_month)
+            show_monthly_readonly_calendar(client_id, selected_month, selected_year)
+
+        elif view_type == "Calendario":
+            show_monthly_calendar_component(client_id, selected_month, selected_year)
         
         elif view_type == "Edición por Año":
-            show_editable_full_year_calendar(client_id)
-        
-        elif view_type == "Año Completo":
-            calendar_df = create_client_calendar_table(client_id, show_full_year=True)
-            if not calendar_df.empty:
-                st.dataframe(calendar_df, use_container_width=True, hide_index=True)
-                
-                # Mostrar resumen del año
-                try:
-                    from calendar_utils import get_client_year_summary
-                    summary = get_client_year_summary(client_id)
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total de Fechas", summary['total_fechas'])
-                    with col2:
-                        st.metric("Actividades", summary['actividades'])
-                    with col3:
-                        st.metric("Meses con Actividad", summary['meses_con_actividad'])
-                    with col4:
-                        if summary['proxima_fecha']:
-                            next_date = datetime.strptime(summary['proxima_fecha']['fecha'], '%Y-%m-%d')
-                            st.metric("Próxima Fecha", next_date.strftime('%d-%b'))
-                        else:
-                            st.metric("Próxima Fecha", "N/A")
-                except:
-                    pass
-            else:
-                st.info("No hay fechas calculadas para mostrar el año completo.")
+            show_editable_full_year_calendar(client_id, selected_year)
                 
     except Exception as e:
         st.error(f"Error al mostrar el calendario: {e}")
@@ -574,92 +1013,460 @@ def show_client_detail():
     
     st.divider()
     
-    # Sección de configuración de actividades y frecuencias
-    show_client_activities_section(client_id)
-    
-    # Sección de acciones rápidas
-    st.divider()
-    st.subheader("⚡ Acciones Rápidas")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        if st.button("📤 Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
-            st.info("Funcionalidad de exportar próximamente...")
-    
-    with col2:
-        if st.button("📧 Enviar por Email", use_container_width=True, key=f"email_{client_id}"):
-            st.info("Funcionalidad de email próximamente...")
-    
-    with col3:
-        if st.button("📋 Duplicar Configuración", use_container_width=True, key=f"duplicate_{client_id}"):
-            st.info("Funcionalidad de duplicar próximamente...")
-    
-    with col4:
-        if st.button("🗑️ Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
-            if st.session_state.get(f'confirm_clear_{client_id}', False):
-                # Ejecutar limpieza
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
-                conn.commit()
-                conn.close()
-                
-                st.success("✅ Fechas eliminadas exitosamente")
-                st.session_state[f'confirm_clear_{client_id}'] = False
-                st.rerun()
-            else:
-                st.session_state[f'confirm_clear_{client_id}'] = True
-                st.warning("⚠️ Presiona nuevamente para confirmar la eliminación de todas las fechas")
-                st.rerun()
-    
-    with col5:
-        # Debug: Mostrar estado actual de confirmación
-        confirm_key = f'confirm_delete_{client_id}'
-        is_confirmed = st.session_state.get(confirm_key, False)
-        
-        # Cambiar el estilo del botón si está en modo confirmación
-        button_type = "primary" if is_confirmed else "secondary"
-        button_text = "⚠️ CONFIRMAR ELIMINACIÓN" if is_confirmed else "❌ Eliminar Cliente"
-        
-        if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
-            if is_confirmed:
-                # Segunda presión: ejecutar eliminación
-                st.info("Eliminando cliente...")
-                try:
-                    if delete_client(client_id):
-                        st.success("✅ Cliente eliminado exitosamente")
-                        # Limpiar estados específicos del cliente
-                        keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
-                        for key in keys_to_delete:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        # Regresar a la galería
-                        st.session_state.show_client_detail = False
-                        st.session_state.selected_client = None
+    # Sección de configuración de actividades y frecuencias (solo en desarrollo)
+    if not is_read_only_mode():
+        show_client_activities_section(client_id)
+
+        # Acciones Rápidas para ADMIN también en modo editable
+        if auth_system.is_admin():
+            st.divider()
+            st.subheader("Acciones Rápidas")
+
+            col1, col2, col3, col4, col5 = st.columns(5)
+
+            with col1:
+                if st.button("Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
+                    st.info("Funcionalidad de exportar próximamente...")
+
+            with col2:
+                if st.button("Copiar Frecuencias", use_container_width=True, key=f"copy_freq_{client_id}"):
+                    st.session_state[f'show_copy_frequencies_modal_{client_id}'] = True
+                    st.rerun()
+
+            with col3:
+                if st.button("Copiar Fechas", use_container_width=True, key=f"copy_dates_{client_id}"):
+                    st.session_state[f'show_copy_dates_modal_{client_id}'] = True
+                    st.rerun()
+
+            with col4:
+                if st.button("Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
+                    if st.session_state.get(f'confirm_clear_{client_id}', False):
+                        # Ejecutar limpieza
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
+                        conn.commit()
+                        conn.close()
+
+                        st.success("Fechas eliminadas exitosamente")
+                        st.session_state[f'confirm_clear_{client_id}'] = False
                         st.rerun()
                     else:
-                        st.error("❌ Error al eliminar el cliente")
+                        st.session_state[f'confirm_clear_{client_id}'] = True
+                        st.warning("Presiona nuevamente para confirmar la eliminación de todas las fechas")
+                        st.rerun()
+
+            with col5:
+                # Debug: Mostrar estado actual de confirmación
+                confirm_key = f'confirm_delete_{client_id}'
+                is_confirmed = st.session_state.get(confirm_key, False)
+
+                # Cambiar el estilo del botón si está en modo confirmación
+                button_type = "primary" if is_confirmed else "secondary"
+                button_text = "CONFIRMAR ELIMINACIÓN" if is_confirmed else "Eliminar Cliente"
+
+                if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
+                    if is_confirmed:
+                        # Segunda presión: ejecutar eliminación
+                        st.info("Eliminando cliente...")
+                        try:
+                            if delete_client(client_id):
+                                st.success("Cliente eliminado exitosamente")
+                                # Limpiar estados específicos del cliente
+                                keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
+                                for key in keys_to_delete:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+
+                                # Regresar a la galería
+                                st.session_state.show_client_detail = False
+                                st.session_state.selected_client = None
+                                st.rerun()
+                            else:
+                                st.error("Error al eliminar el cliente")
+                                st.session_state[confirm_key] = False
+                        except Exception as e:
+                            st.error(f"Error inesperado: {str(e)}")
+                            st.session_state[confirm_key] = False
+                    else:
+                        # Primera presión: pedir confirmación
+                        st.session_state[confirm_key] = True
+                        st.warning("¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
+                        st.rerun()
+
+                # Mostrar botón de cancelar si está en modo confirmación
+                if is_confirmed:
+                    if st.button("Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
                         st.session_state[confirm_key] = False
-                except Exception as e:
-                    st.error(f"❌ Error inesperado: {str(e)}")
-                    st.session_state[confirm_key] = False
-            else:
-                # Primera presión: pedir confirmación
-                st.session_state[confirm_key] = True
-                st.warning("⚠️ ¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
-                st.rerun()
+                        st.rerun()
+    else:
+        show_client_activities_readonly(client_id)
+
+        # Determinar si mostrar Acciones Rápidas según el rol
+        current_user = get_current_user()
+        user_role = current_user.get('role') if current_user else None
+        restricted_roles = {UserRole.MX_USER, UserRole.CO_USER, UserRole.CS_USER}
+        allow_quick_actions = not (user_role in restricted_roles)
+
+        if allow_quick_actions:
+            # Sección de acciones rápidas
+            st.divider()
+            st.subheader("Acciones Rápidas")
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                if st.button("Exportar Calendario", use_container_width=True, key=f"export_{client_id}"):
+                    st.info("Funcionalidad de exportar próximamente...")
+            
+            with col2:
+                if st.button("Copiar Frecuencias", use_container_width=True, key=f"copy_freq_{client_id}"):
+                    st.session_state[f'show_copy_frequencies_modal_{client_id}'] = True
+                    st.rerun()
+            
+            with col3:
+                if st.button("Copiar Fechas", use_container_width=True, key=f"copy_dates_{client_id}"):
+                    st.session_state[f'show_copy_dates_modal_{client_id}'] = True
+                    st.rerun()
+            
+            with col4:
+                if st.button("Limpiar Fechas", use_container_width=True, key=f"clear_{client_id}"):
+                    if st.session_state.get(f'confirm_clear_{client_id}', False):
+                        # Ejecutar limpieza
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM calculated_dates WHERE client_id = ?", (client_id,))
+                        conn.commit()
+                        conn.close()
+                        
+                        st.success("Fechas eliminadas exitosamente")
+                        st.session_state[f'confirm_clear_{client_id}'] = False
+                        st.rerun()
+                    else:
+                        st.session_state[f'confirm_clear_{client_id}'] = True
+                        st.warning("Presiona nuevamente para confirmar la eliminación de todas las fechas")
+                        st.rerun()
+            
+            with col5:
+                # Debug: Mostrar estado actual de confirmación
+                confirm_key = f'confirm_delete_{client_id}'
+                is_confirmed = st.session_state.get(confirm_key, False)
+                
+                # Cambiar el estilo del botón si está en modo confirmación
+                button_type = "primary" if is_confirmed else "secondary"
+                button_text = "CONFIRMAR ELIMINACIÓN" if is_confirmed else "Eliminar Cliente"
+                
+                if st.button(button_text, use_container_width=True, key=f"delete_client_detail_{client_id}", type=button_type):
+                    if is_confirmed:
+                        # Segunda presión: ejecutar eliminación
+                        st.info("Eliminando cliente...")
+                        try:
+                            if delete_client(client_id):
+                                st.success("Cliente eliminado exitosamente")
+                                # Limpiar estados específicos del cliente
+                                keys_to_delete = [k for k in st.session_state.keys() if str(client_id) in str(k)]
+                                for key in keys_to_delete:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+                                
+                                # Regresar a la galería
+                                st.session_state.show_client_detail = False
+                                st.session_state.selected_client = None
+                                st.rerun()
+                            else:
+                                st.error("Error al eliminar el cliente")
+                                st.session_state[confirm_key] = False
+                        except Exception as e:
+                            st.error(f"Error inesperado: {str(e)}")
+                            st.session_state[confirm_key] = False
+                    else:
+                        # Primera presión: pedir confirmación
+                        st.session_state[confirm_key] = True
+                        st.warning("¿Estás seguro? Presiona nuevamente para confirmar la eliminación PERMANENTE del cliente y todos sus datos")
+                        st.rerun()
+                
+                # Mostrar botón de cancelar si está en modo confirmación
+                if is_confirmed:
+                    if st.button("Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
+                        st.session_state[confirm_key] = False
+                        st.rerun()
+    
+    # Mostrar modales si las acciones rápidas están permitidas o si es ADMIN
+    current_user = get_current_user()
+    user_role = current_user.get('role') if current_user else None
+    restricted_roles = {UserRole.MX_USER, UserRole.CO_USER, UserRole.CS_USER}
+    allow_quick_actions = not (user_role in restricted_roles)
+
+    if allow_quick_actions or auth_system.is_admin():
+        # Mostrar modal de copia de fechas si está activado
+        if st.session_state.get(f'show_copy_dates_modal_{client_id}', False):
+            show_copy_dates_modal(client_id, client['name'])
         
-        # Mostrar botón de cancelar si está en modo confirmación
-        if is_confirmed:
-            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_delete_{client_id}"):
-                st.session_state[confirm_key] = False
+        # Mostrar modal de copia de frecuencias si está activado
+        if st.session_state.get(f'show_copy_frequencies_modal_{client_id}', False):
+            show_copy_frequencies_modal(client_id, client['name'])
+
+# ========== MODAL DE COPIA DE FECHAS ==========
+
+def show_copy_dates_modal(source_client_id, source_client_name):
+    """Muestra el modal para seleccionar clientes y copiar fechas"""
+    
+    # Contenedor del modal con estilo
+    with st.container():
+        st.markdown("---")
+        st.markdown(f"### Copiar Fechas de: {source_client_name}")
+        st.markdown("Selecciona los clientes que recibirán las fechas. Solo se muestran clientes con las mismas frecuencias de actividades.")
+        
+        # Obtener clientes compatibles
+        compatible_clients = get_clients_with_matching_frequencies(source_client_id)
+        
+        if compatible_clients.empty:
+            st.warning("No se encontraron clientes con las mismas frecuencias de actividades.")
+            st.info("Para que un cliente aparezca aquí, debe tener exactamente las mismas actividades con las mismas frecuencias que el cliente origen.")
+            
+            # Mostrar resumen de actividades del cliente origen
+            source_activities = get_client_activity_summary(source_client_id)
+            if not source_activities.empty:
+                st.markdown("**Configuración del cliente origen:**")
+                for _, activity in source_activities.iterrows():
+                    st.write(f"- {activity['activity_name']}: {activity['frequency_name']}")
+        else:
+            # Mostrar información de las fechas a copiar
+            source_dates = get_calculated_dates(source_client_id)
+            if source_dates.empty:
+                st.warning("El cliente origen no tiene fechas calculadas para copiar.")
+            else:
+                total_dates = len(source_dates)
+                activities_count = len(source_dates['activity_name'].unique())
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total de Fechas a Copiar", total_dates)
+                with col2:
+                    st.metric("Actividades", activities_count)
+                
+                st.markdown("**Fechas que se copiarán:**")
+                for activity in source_dates['activity_name'].unique():
+                    activity_dates = source_dates[source_dates['activity_name'] == activity]
+                    dates_list = [d for d in activity_dates['date'].tolist()]
+                    st.write(f"- {activity}: {len(dates_list)} fechas")
+                
+                st.markdown("---")
+                
+                # Búsqueda de clientes
+                search_text = st.text_input(
+                    "Buscar clientes:",
+                    placeholder="Buscar por nombre, código AG, CSR, vendedor...",
+                    key=f"search_copy_{source_client_id}"
+                )
+                
+                # Filtrar clientes según búsqueda
+                filtered_clients = compatible_clients.copy()
+                if search_text:
+                    filtered_clients = filtered_clients[
+                        filtered_clients['name'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['codigo_ag'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['csr'].str.contains(search_text, case=False, na=False) |
+                        filtered_clients['vendedor'].str.contains(search_text, case=False, na=False)
+                    ]
+                
+                if filtered_clients.empty:
+                    st.info("No se encontraron clientes que coincidan con la búsqueda.")
+                else:
+                    st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
+                    
+                    # Inicializar estado de selección para todos los clientes visibles
+                    select_all_key = f"select_all_copy_{source_client_id}"
+                    
+                    # Checkbox para seleccionar todos
+                    select_all = st.checkbox(
+                        "Seleccionar todos los clientes visibles",
+                        key=select_all_key
+                    )
+                    
+                    # Si se marca "seleccionar todos", actualizar todos los checkboxes de los clientes filtrados
+                    if select_all:
+                        for _, client in filtered_clients.iterrows():
+                            checkbox_key = f"copy_client_{source_client_id}_{client['id']}"
+                            st.session_state[checkbox_key] = True
+                    
+                    # Lista de checkboxes para cada cliente
+                    selected_clients = []
+                    
+                    # Contenedor scrolleable para la lista de clientes
+                    with st.container(height=300):
+                        for _, client in filtered_clients.iterrows():
+                            client_id = client['id']
+                            client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
+                            
+                            checkbox_key = f"copy_client_{source_client_id}_{client_id}"
+                            
+                            # Usar el valor actual del session_state
+                            current_value = st.session_state.get(checkbox_key, False)
+                            
+                            if st.checkbox(
+                                client_info,
+                                value=current_value,
+                                key=checkbox_key
+                            ):
+                                selected_clients.append(client_id)
+                    
+                    # Botones de acción
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    
+                    with col1:
+                        if st.button("Copiar Fechas", type="primary", use_container_width=True, key=f"execute_copy_{source_client_id}"):
+                            if not selected_clients:
+                                st.error("Selecciona al menos un cliente para copiar las fechas.")
+                            else:
+                                with st.spinner("Copiando fechas..."):
+                                    success, message = copy_dates_to_clients(source_client_id, selected_clients)
+                                
+                                if success:
+                                    st.success(message)
+                                    # Limpiar estados del modal
+                                    keys_to_clear = [k for k in st.session_state.keys() if f"copy_client_{source_client_id}" in k or f"search_copy_{source_client_id}" in k or f"select_all_copy_{source_client_id}" in k]
+                                    for key in keys_to_clear:
+                                        if key in st.session_state:
+                                            del st.session_state[key]
+                                    st.session_state[f'show_copy_dates_modal_{source_client_id}'] = False
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+                    
+                    with col2:
+                        selected_count = len(selected_clients)
+                        if selected_count > 0:
+                            st.info(f"{selected_count} cliente(s) seleccionado(s)")
+                    
+                    with col3:
+                        if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_{source_client_id}"):
+                            st.session_state[f'show_copy_dates_modal_{source_client_id}'] = False
+                            # Limpiar estados del modal
+                            keys_to_clear = [k for k in st.session_state.keys() if f"copy_client_{source_client_id}" in k or f"search_copy_{source_client_id}" in k or f"select_all_copy_{source_client_id}" in k]
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
+
+
+# ========== MODAL DE COPIA DE FRECUENCIAS ==========
+
+def show_copy_frequencies_modal(source_client_id, source_client_name):
+    """Muestra el modal para seleccionar clientes y copiar frecuencias"""
+
+    with st.container():
+        st.markdown("---")
+        st.markdown(f"### Copiar Frecuencias de: {source_client_name}")
+        st.markdown("Selecciona los clientes que recibirán las frecuencias. Solo se muestran clientes con las mismas actividades.")
+
+        compatible_clients = get_clients_with_matching_frequencies(source_client_id)
+
+        if compatible_clients.empty:
+            st.warning("No se encontraron clientes con las mismas actividades.")
+            st.info("Para copiar frecuencias, el cliente destino debe tener las mismas actividades configuradas que el cliente origen.")
+
+            source_activities = get_client_activity_summary(source_client_id)
+            if not source_activities.empty:
+                st.markdown("**Actividades del cliente origen:**")
+                for _, activity in source_activities.iterrows():
+                    st.write(f"- {activity['activity_name']}: {activity['frequency_name']}")
+            return
+
+        source_activities = get_client_activity_summary(source_client_id)
+        st.markdown("**Frecuencias que se copiarán:**")
+        for _, activity in source_activities.iterrows():
+            st.write(f"- {activity['activity_name']}: **{activity['frequency_name']}**")
+
+        st.markdown("---")
+
+        search_text = st.text_input(
+            "Buscar clientes:",
+            placeholder="Buscar por nombre, código AG, CSR, vendedor...",
+            key=f"search_copy_freq_{source_client_id}"
+        )
+
+        filtered_clients = compatible_clients.copy()
+        if search_text:
+            filtered_clients = filtered_clients[
+                filtered_clients['name'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['codigo_ag'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['csr'].str.contains(search_text, case=False, na=False) |
+                filtered_clients['vendedor'].str.contains(search_text, case=False, na=False)
+            ]
+
+        if filtered_clients.empty:
+            st.info("No se encontraron clientes que coincidan con la búsqueda.")
+            return
+
+        st.markdown(f"**Clientes compatibles ({len(filtered_clients)}):**")
+
+        select_all_key = f"select_all_copy_freq_{source_client_id}"
+        select_all = st.checkbox(
+            "Seleccionar todos los clientes visibles",
+            key=select_all_key
+        )
+
+        if select_all:
+            for _, client in filtered_clients.iterrows():
+                checkbox_key = f"copy_freq_client_{source_client_id}_{client['id']}"
+                st.session_state[checkbox_key] = True
+
+        selected_clients = []
+
+        with st.container(height=300):
+            for _, client in filtered_clients.iterrows():
+                target_client_id = client['id']
+                client_info = f"{client['name']} - AG: {client['codigo_ag'] or 'N/A'} - CSR: {client['csr'] or 'N/A'}"
+
+                checkbox_key = f"copy_freq_client_{source_client_id}_{target_client_id}"
+                current_value = st.session_state.get(checkbox_key, False)
+
+                if st.checkbox(
+                    client_info,
+                    value=current_value,
+                    key=checkbox_key
+                ):
+                    selected_clients.append(target_client_id)
+
+        col1, col2, col3 = st.columns([1, 1, 1])
+
+        with col1:
+            if st.button("Copiar Frecuencias", type="primary", use_container_width=True, key=f"execute_copy_freq_{source_client_id}"):
+                if not selected_clients:
+                    st.error("Selecciona al menos un cliente para copiar las frecuencias.")
+                else:
+                    with st.spinner("Copiando frecuencias..."):
+                        success, message = copy_frequencies_to_clients(source_client_id, selected_clients)
+
+                    if success:
+                        st.success(message)
+                        keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+        with col2:
+            selected_count = len(selected_clients)
+            if selected_count > 0:
+                st.info(f"{selected_count} cliente(s) seleccionado(s)")
+
+        with col3:
+            if st.button("Cancelar", use_container_width=True, key=f"cancel_copy_freq_{source_client_id}"):
+                keys_to_clear = [k for k in st.session_state.keys() if f"copy_freq_client_{source_client_id}" in k or f"search_copy_freq_{source_client_id}" in k or f"select_all_copy_freq_{source_client_id}" in k]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.session_state[f'show_copy_frequencies_modal_{source_client_id}'] = False
                 st.rerun()
 
 # ========== FUNCIONES DE VISTA DE CALENDARIO ==========
 
-def show_monthly_readonly_calendar(client_id, selected_month):
+def show_monthly_readonly_calendar(client_id, selected_month, year=None):
     """Muestra un calendario mensual en formato de tabla simple y compacta"""
     
     dates_df = get_calculated_dates(client_id)
@@ -668,7 +1475,19 @@ def show_monthly_readonly_calendar(client_id, selected_month):
         st.info("No hay fechas calculadas.")
         return
     
-    st.markdown(f"### 📅 Calendario de {selected_month}")
+    # Si se especifica un año, filtrar por ese año
+    if year:
+        try:
+            dates_df['date_obj'] = pd.to_datetime(dates_df['date'])
+            dates_df = dates_df[dates_df['date_obj'].dt.year == year]
+            if dates_df.empty:
+                st.info(f"No hay fechas calculadas para {selected_month} {year}.")
+                return
+        except Exception as e:
+            st.error(f"Error filtrando por año: {e}")
+            return
+    
+    st.markdown(f"### Calendario de {selected_month} {year if year else ''}")
     st.write("*Vista de solo lectura - Fechas programadas para este mes*")
     
     # Convertir nombre del mes a número
@@ -719,14 +1538,27 @@ def show_monthly_readonly_calendar(client_id, selected_month):
     
     # Mostrar información resumen del mes
     total_dates_month = len(month_dates)
-    activities_list = list(set([d['activity_name'] for d in month_dates]))
+    # Ordenar actividades según el orden específico
+    activity_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
+    all_activities = list(set([d['activity_name'] for d in month_dates]))
+    
+    activities_list = []
+    for activity in activity_order:
+        if activity in all_activities:
+            activities_list.append(activity)
+    
+    # Agregar cualquier actividad adicional que no esté en el orden predefinido
+    for activity in all_activities:
+        if activity not in activity_order:
+            activities_list.append(activity)
+    
     activities_count = len(activities_list)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📅 Fechas en el Mes", total_dates_month)
+        st.metric("Fechas en el Mes", total_dates_month)
     with col2:
-        st.metric("🏷️ Actividades", activities_count)
+        st.metric("Actividades", activities_count)
     with col3:
         # Próxima fecha del mes
         try:
@@ -734,11 +1566,11 @@ def show_monthly_readonly_calendar(client_id, selected_month):
             if future_dates:
                 next_date = min(future_dates, key=lambda x: x['date'])
                 days_until = (next_date['date'] - datetime.now()).days
-                st.metric("📆 Próxima Fecha", f"{days_until} días")
+                st.metric("Próxima Fecha del mes", f"{days_until} días")
             else:
-                st.metric("📆 Próxima Fecha", "N/A")
+                st.metric("Próxima Fecha del mes", "N/A")
         except:
-            st.metric("📆 Próxima Fecha", "N/A")
+            st.metric("Próxima Fecha del mes", "N/A")
     
     # Crear tabla agrupada por actividad - solo fechas del mes seleccionado
     table_data = {}
@@ -811,10 +1643,195 @@ def show_monthly_readonly_calendar(client_id, selected_month):
     else:
         st.info("No hay fechas para mostrar en formato de tabla.")
 
+
+def show_monthly_calendar_component(client_id, selected_month, year=None):
+    """Muestra un calendario mensual tipo grilla para visualizar actividades con colores por actividad."""
+    dates_df = get_calculated_dates(client_id)
+
+    if dates_df.empty:
+        st.info("No hay fechas calculadas.")
+        return
+
+    # Año requerido para renderizar calendario; si no viene, usar actual
+    if not year:
+        year = datetime.now().year
+
+    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    if selected_month not in months:
+        st.error("Mes inválido")
+        return
+
+    month_num = months.index(selected_month) + 1
+
+    # Filtrar por año/mes
+    try:
+        df = dates_df.copy()
+        df['date_obj'] = pd.to_datetime(df['date'], errors='coerce')
+        df = df.dropna(subset=['date_obj'])
+        df = df[(df['date_obj'].dt.year == year) & (df['date_obj'].dt.month == month_num)]
+    except Exception:
+        st.error("No se pudieron procesar las fechas del calendario.")
+        return
+
+    if df.empty:
+        st.info(f"No hay actividades programadas para {selected_month} {year}.")
+        return
+
+    # Mapa día -> {actividad: conteo}
+    day_events: dict[int, dict[str, int]] = {}
+    for _, row in df.iterrows():
+        day = int(row['date_obj'].day)
+        activity = str(row.get('activity_name', '')).strip() or "(Sin nombre)"
+        day_events.setdefault(day, {})
+        day_events[day][activity] = day_events[day].get(activity, 0) + 1
+
+    # Ordenar por día respetando orden base; mantener repetición como contador
+    base_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
+    day_events_ordered: dict[int, list[tuple[str, int]]] = {}
+    for day, counts in day_events.items():
+        ordered_names = [a for a in base_order if a in counts] + [a for a in counts.keys() if a not in base_order]
+        day_events_ordered[day] = [(name, counts[name]) for name in ordered_names]
+
+    def activity_style(activity_name: str):
+        # Colores solicitados
+        if activity_name == 'Fecha Envío OC':
+            return {"bg": "var(--werfen-blue)", "fg": "#ffffff", "label": "Fecha Envío OC"}
+        if activity_name == 'Albaranado':
+            return {"bg": "var(--werfen-orange)", "fg": "#ffffff", "label": "Albaranado"}
+        if activity_name == 'Fecha Entrega':
+            return {"bg": "#FFB653", "fg": "#1a1a1a", "label": "Fecha Entrega"}
+        # Actividades extra
+        return {"bg": "#2E7D32", "fg": "#ffffff", "label": activity_name}
+
+    # Leyenda
+    legend_items = [
+        ("Fecha Envío OC", "var(--werfen-blue)", "#ffffff"),
+        ("Albaranado", "var(--werfen-orange)", "#ffffff"),
+        ("Fecha Entrega", "#FFB653", "#1a1a1a"),
+        ("Extra", "#2E7D32", "#ffffff"),
+    ]
+
+    legend_html = "".join(
+        f"<span class='gl-legend-item'><span class='gl-legend-dot' style='background:{bg};'></span>{label}</span>"
+        for label, bg, _fg in legend_items
+    )
+
+    # Construir calendario
+    cal = calendar.Calendar(firstweekday=0)  # 0 = lunes
+    weeks = cal.monthdayscalendar(year, month_num)
+    weekday_labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+    header_cells = "".join(f"<div class='gl-weekday'>{w}</div>" for w in weekday_labels)
+    weeks_html = ""
+
+    for week in weeks:
+        days_html = ""
+        for day in week:
+            if day == 0:
+                days_html += "<div class='gl-day gl-day-empty'></div>"
+                continue
+
+            badges = ""
+            for act, count in day_events_ordered.get(day, []):
+                style = activity_style(act)
+                label = style["label"]
+                label_text = f"{label} ({count})" if count > 1 else label
+                title_text = f"{act} (x{count})" if count > 1 else act
+                badges += (
+                    "<div class='gl-badge' "
+                    f"style='background:{style['bg']};color:{style['fg']};' "
+                    f"title='{title_text}'>"
+                    f"{label_text}"
+                    "</div>"
+                )
+
+            days_html += (
+                "<div class='gl-day'>"
+                f"<div class='gl-day-num'>{day}</div>"
+                f"<div class='gl-badges'>{badges}</div>"
+                "</div>"
+            )
+
+        weeks_html += f"<div class='gl-week'>{days_html}</div>"
+
+    html = f"""
+    <style>
+      .gl-cal-wrap {{
+        border: 2px solid var(--werfen-gray-dark);
+        border-radius: 12px;
+        padding: 12px;
+        background: linear-gradient(135deg, var(--werfen-white) 0%, var(--werfen-gray) 100%);
+      }}
+      .gl-cal-title {{
+        display:flex; align-items:center; justify-content:space-between;
+        gap: 12px; margin-bottom: 10px;
+      }}
+      .gl-cal-title h4 {{ margin: 0; color: var(--werfen-blue); }}
+      .gl-legend {{ display:flex; gap: 12px; flex-wrap: wrap; }}
+      .gl-legend-item {{ font-size: 12px; color: #333; display:flex; align-items:center; gap: 6px; }}
+      .gl-legend-dot {{ width: 10px; height: 10px; border-radius: 999px; display:inline-block; }}
+
+      .gl-weekdays {{
+        display:grid; grid-template-columns: repeat(7, 1fr);
+        gap: 8px; margin-bottom: 8px;
+      }}
+      .gl-weekday {{
+        font-weight: 700; font-size: 12px; color: var(--werfen-blue);
+        text-align:center; padding: 6px 0;
+      }}
+      .gl-week {{
+        display:grid; grid-template-columns: repeat(7, 1fr);
+        gap: 8px; margin-bottom: 8px;
+      }}
+      .gl-day {{
+        min-height: 86px;
+        border: 1px solid var(--werfen-gray-dark);
+        border-radius: 10px;
+        background: var(--werfen-white);
+        padding: 8px;
+        overflow: hidden;
+      }}
+      .gl-day-empty {{ background: transparent; border: none; }}
+      .gl-day-num {{
+        font-weight: 800; color: #333; font-size: 13px;
+        line-height: 1; margin-bottom: 6px;
+      }}
+      .gl-badges {{ display:flex; flex-direction:column; gap: 6px; }}
+      .gl-badge {{
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.1;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }}
+    </style>
+
+    <div class='gl-cal-wrap'>
+      <div class='gl-cal-title'>
+        <h4>Calendario de {selected_month} {year}</h4>
+        <div class='gl-legend'>{legend_html}</div>
+      </div>
+      <div class='gl-weekdays'>{header_cells}</div>
+      {weeks_html}
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
+
 # ========== FUNCIONES DE EDICIÓN DE FECHAS ==========
 
 def show_inline_editable_calendar(client_id):
     """Muestra una tabla con edición inline usando st.data_editor - Todas las fechas del cliente"""
+    
+    # En modo de solo lectura, mostrar mensaje y salir
+    if is_read_only_mode():
+        st.warning("**Edición No Disponible en Producción**")
+        st.info("Esta vista de edición está deshabilitada en el entorno de producción.")
+        return
     
     dates_df = get_calculated_dates(client_id)
     
@@ -822,7 +1839,7 @@ def show_inline_editable_calendar(client_id):
         st.info("No hay fechas calculadas.")
         return
     
-    st.markdown("### 📅 Edición Completa de Fechas")
+    st.markdown("### Edición Completa de Fechas")
     st.write("*Edita todas las fechas del cliente simultáneamente en la tabla*")
     
     # Mostrar información sobre las fechas
@@ -831,12 +1848,12 @@ def show_inline_editable_calendar(client_id):
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📅 Total de Fechas", total_dates)
+        st.metric("Total de Fechas", total_dates)
     with col2:
-        st.metric("🏷️ Actividades", activities_count)
+        st.metric("Actividades", activities_count)
     with col3:
         max_dates_per_activity = dates_df.groupby('activity_name')['date_position'].max().max()
-        st.metric("📊 Máx. Fechas/Actividad", max_dates_per_activity)
+        st.metric("Máx. Fechas/Actividad", max_dates_per_activity)
     
     # Preparar datos para st.data_editor
     edit_df = prepare_calendar_for_editing(dates_df)
@@ -867,7 +1884,7 @@ def show_inline_editable_calendar(client_id):
     
     # Instrucciones de uso
     st.info("""
-    💡 **Instrucciones:**
+    **Instrucciones:**
     - Haz clic en cualquier celda de fecha para editarla
     - Puedes añadir nuevas fechas en las columnas vacías
     - Las fechas se organizan por posición (Fecha 1, Fecha 2, etc.)
@@ -876,21 +1893,21 @@ def show_inline_editable_calendar(client_id):
     
     # Detectar cambios y guardar
     if not edit_df.equals(edited_df):
-        st.markdown("### 🔄 Cambios Detectados")
+        st.markdown("### Cambios Detectados")
         
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            if st.button("💾 Guardar Cambios", 
+            if st.button("Guardar Cambios", 
                         key=f"save_inline_{client_id}",
                         type="primary",
                         use_container_width=True):
                 save_inline_changes(client_id, edit_df, edited_df)
-                st.success("✅ Cambios guardados exitosamente")
+                st.success("Cambios guardados exitosamente")
                 st.rerun()
         
         with col2:
-            if st.button("❌ Descartar Cambios",
+            if st.button("Descartar Cambios",
                         key=f"discard_inline_{client_id}",
                         use_container_width=True):
                 st.rerun()
@@ -898,11 +1915,17 @@ def show_inline_editable_calendar(client_id):
         # Mostrar preview de cambios
         show_changes_preview(edit_df, edited_df)
     else:
-        st.markdown("### ✅ Sin Cambios Pendientes")
+        st.markdown("### Sin Cambios Pendientes")
         st.info("Edita las fechas en la tabla superior para ver los cambios aquí.")
 
 def show_monthly_editable_calendar(client_id):
     """Muestra un calendario mensual editable con navegación entre meses"""
+    
+    # En modo de solo lectura, mostrar mensaje y salir
+    if is_read_only_mode():
+        st.warning("**Edición No Disponible en Producción**")
+        st.info("Esta vista de edición está deshabilitada en el entorno de producción.")
+        return
     
     dates_df = get_calculated_dates(client_id)
     
@@ -910,7 +1933,7 @@ def show_monthly_editable_calendar(client_id):
         st.info("No hay fechas calculadas.")
         return
     
-    st.markdown("### 📅 Calendario Mensual Editable")
+    st.markdown("### Calendario Mensual Editable")
     st.write("*Navega por los meses y edita las fechas de cada uno*")
     
     # Información general
@@ -919,9 +1942,9 @@ def show_monthly_editable_calendar(client_id):
     
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("📅 Total de Fechas", total_dates)
+        st.metric("Total de Fechas", total_dates)
     with col2:
-        st.metric("🏷️ Actividades", activities_count)
+        st.metric("Actividades", activities_count)
     
     # Selector de mes
     months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1003,7 +2026,7 @@ def show_monthly_editable_calendar(client_id):
     
     # Instrucciones específicas para la vista mensual
     st.info(f"""
-    💡 **Instrucciones para {selected_month}:**
+    **Instrucciones para {selected_month}:**
     - Edita las fechas directamente en la tabla
     - Solo se muestran las fechas del mes seleccionado
     - Cambia de mes usando el selector superior
@@ -1012,21 +2035,21 @@ def show_monthly_editable_calendar(client_id):
     
     # Detectar cambios y guardar
     if not edit_df.equals(edited_df):
-        st.markdown("### 🔄 Cambios Detectados")
+        st.markdown("### Cambios Detectados")
         
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            if st.button("💾 Guardar Cambios", 
+            if st.button("Guardar Cambios", 
                         key=f"save_monthly_{client_id}_{month_num}",
                         type="primary",
                         use_container_width=True):
                 save_monthly_changes(client_id, edit_df, edited_df, month_num)
-                st.success(f"✅ Cambios guardados para {selected_month}")
+                st.success(f"Cambios guardados para {selected_month}")
                 st.rerun()
         
         with col2:
-            if st.button("❌ Descartar Cambios",
+            if st.button("Descartar Cambios",
                         key=f"discard_monthly_{client_id}_{month_num}",
                         use_container_width=True):
                 st.rerun()
@@ -1034,11 +2057,27 @@ def show_monthly_editable_calendar(client_id):
         # Mostrar preview de cambios
         show_monthly_changes_preview(edit_df, edited_df, selected_month)
     else:
-        st.markdown("### ✅ Sin Cambios Pendientes")
+        st.markdown("### Sin Cambios Pendientes")
         st.info(f"Edita las fechas en la tabla superior para ver los cambios de {selected_month}.")
 
-def show_editable_full_year_calendar(client_id):
+def show_editable_full_year_calendar(client_id, year=None):
     """Muestra un calendario anual editable por meses"""
+    
+    # En modo de solo lectura, redirigir a vista de solo lectura
+    if is_read_only_mode():
+        st.warning("**Vista de Edición No Disponible en Producción**")
+        st.info("Mostrando vista de solo lectura del calendario completo")
+        
+        if year:
+            calendar_df = create_client_calendar_table_by_year(client_id, year)
+        else:
+            calendar_df = create_client_calendar_table(client_id, show_full_year=True)
+            
+        if not calendar_df.empty:
+            st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay fechas calculadas para este cliente.")
+        return
     
     dates_df = get_calculated_dates(client_id)
     
@@ -1046,7 +2085,21 @@ def show_editable_full_year_calendar(client_id):
         st.info("No hay fechas calculadas para mostrar el año completo.")
         return
     
-    st.markdown("### 📅 Calendario Anual Editable")
+    # Filtrar por año si se especifica
+    if year:
+        try:
+            dates_df['date_obj_temp'] = pd.to_datetime(dates_df['date'])
+            dates_df = dates_df[dates_df['date_obj_temp'].dt.year == year]
+            dates_df = dates_df.drop('date_obj_temp', axis=1)
+            
+            if dates_df.empty:
+                st.info(f"No hay fechas calculadas para el año {year}.")
+                return
+        except Exception as e:
+            st.error(f"Error filtrando por año: {e}")
+            return
+    
+    st.markdown(f"### Calendario Anual Editable {year if year else ''}")
     
     # Crear tabs por trimestres
     months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1072,9 +2125,9 @@ def show_editable_full_year_calendar(client_id):
             for month_idx, month in enumerate(quarter_months):
                 with month_tabs[month_idx]:
                     month_num = months.index(month) + 1
-                    show_editable_month_view(client_id, month_num, month, dates_df)
+                    show_editable_month_view(client_id, month_num, month, dates_df, year)
 
-def show_editable_month_view(client_id, month_num, month_name, dates_df):
+def show_editable_month_view(client_id, month_num, month_name, dates_df, year=None):
     """Muestra la vista editable de un mes específico optimizada en bloques de 4"""
     
     # Filtrar fechas del mes
@@ -1083,17 +2136,19 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
         try:
             date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
             if date_obj.month == month_num:
-                month_dates.append({
-                    'activity': row['activity_name'],
-                    'date': date_obj,
-                    'position': row['date_position'],
-                    'original_date_str': row['date']
-                })
+                # Si year está especificado, verificar que coincida
+                if year is None or date_obj.year == year:
+                    month_dates.append({
+                        'activity': row['activity_name'],
+                        'date': date_obj,
+                        'position': row['date_position'],
+                        'original_date_str': row['date']
+                    })
         except:
             continue
     
     if not month_dates:
-        st.info(f"No hay actividades programadas para {month_name}")
+        st.info(f"No hay actividades programadas para {month_name} {year if year else ''}")
         return
     
     # Agrupar por actividad
@@ -1106,7 +2161,7 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
     
     # Mostrar cada actividad del mes en bloques optimizados
     for activity, dates in activities.items():
-        st.markdown(f"**📋 {activity}**")
+        st.markdown(f"**{activity}**")
         
         # Dividir fechas en bloques de 4 para optimizar el espacio
         dates_sorted = sorted(dates, key=lambda x: x['position'])
@@ -1135,17 +2190,17 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
                         
                         # Indicador visual de cambio
                         if new_date != date_info['date'].date():
-                            st.markdown("🔄 *Modificada*")
+                            st.markdown("*Modificada*")
                         
                         # Botón de guardado compacto
-                        if st.button("💾", 
+                        if st.button("Guardar", 
                                    key=f"save_month_{client_id}_{activity}_{date_info['position']}_{month_num}",
                                    help="Guardar esta fecha",
                                    use_container_width=True):
                             # Manejo seguro de fechas
                             date_str = new_date.strftime('%Y-%m-%d') if hasattr(new_date, 'strftime') else str(new_date)
                             update_calculated_date(client_id, activity, date_info['position'], date_str)
-                            st.success("✅ Actualizada")
+                            st.success("Actualizada")
                             st.rerun()
             
             # Espaciado entre bloques
@@ -1156,7 +2211,7 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
         st.markdown("---")
         col1, col2 = st.columns([1, 3])
         with col1:
-            if st.button(f"💾 Guardar todas las fechas de {activity}", 
+            if st.button(f"Guardar todas las fechas de {activity}", 
                         key=f"save_all_{client_id}_{activity}_{month_num}",
                         use_container_width=True):
                 changes_made = 0
@@ -1171,7 +2226,7 @@ def show_editable_month_view(client_id, month_num, month_name, dates_df):
                             changes_made += 1
                 
                 if changes_made > 0:
-                    st.success(f"✅ {changes_made} fechas actualizadas para {activity}")
+                    st.success(f"{changes_made} fechas actualizadas para {activity}")
                     st.rerun()
                 else:
                     st.info("No hay cambios para guardar")
@@ -1184,8 +2239,20 @@ def prepare_calendar_for_editing(dates_df):
     if dates_df.empty:
         return pd.DataFrame()
     
-    # Crear tabla pivoteada
-    activities = dates_df['activity_name'].unique()
+    # Ordenar actividades según el orden específico requerido
+    activity_order = ['Fecha Envío OC', 'Albaranado', 'Fecha Entrega']
+    all_activities = dates_df['activity_name'].unique()
+    
+    # Crear lista ordenada de actividades
+    activities = []
+    for activity in activity_order:
+        if activity in all_activities:
+            activities.append(activity)
+    
+    # Agregar cualquier actividad adicional que no esté en el orden predefinido
+    for activity in all_activities:
+        if activity not in activity_order:
+            activities.append(activity)
     
     # Determinar el número máximo de fechas que tiene cualquier actividad
     max_dates = 0
@@ -1329,7 +2396,7 @@ def save_monthly_changes(client_id, original_df, edited_df, month_num):
 def show_monthly_changes_preview(original_df, edited_df, month_name):
     """Muestra un preview de los cambios realizados en el mes específico"""
     
-    st.subheader(f"🔍 Cambios en {month_name}")
+    st.subheader(f"Cambios en {month_name}")
     
     changes_found = False
     
@@ -1385,7 +2452,7 @@ def show_monthly_changes_preview(original_df, edited_df, month_name):
 def show_changes_preview(original_df, edited_df):
     """Muestra un preview de los cambios realizados"""
     
-    st.subheader("🔍 Preview de Cambios")
+    st.subheader("Preview de Cambios")
     
     changes_found = False
     
@@ -1442,7 +2509,11 @@ def show_changes_preview(original_df, edited_df):
 
 def show_client_activities_section(client_id):
     """Muestra la sección de configuración de actividades y frecuencias"""
-    st.subheader("⚙️ Configurar Actividades y Frecuencias")
+    # No mostrar nada en modo de solo lectura
+    if is_read_only_mode():
+        return
+    
+    st.subheader("Configurar Actividades y Frecuencias")
     
     activities = get_client_activities(client_id)
     frequency_templates = get_frequency_templates()
@@ -1453,7 +2524,7 @@ def show_client_activities_section(client_id):
             st.write("**Actividades Actuales:**")
             
             for idx, (_, activity) in enumerate(activities.iterrows()):
-                col1, col2, col3 = st.columns([3, 3, 1])
+                col1, col2, col3 = st.columns([3, 3, 2])
                 
                 with col1:
                     st.write(f"**{activity['activity_name']}**")
@@ -1475,57 +2546,124 @@ def show_client_activities_section(client_id):
                         "Frecuencia:",
                         freq_options,
                         index=current_freq_index,
-                        key=f"freq_{activity['activity_name']}_{idx}"
+                        key=f"freq_{activity['activity_name']}_{idx}",
+                        disabled=is_read_only_mode(),
+                        help="Solo lectura para tu usuario" if is_read_only_mode() else None
                     )
                     
-                    # Actualizar frecuencia si cambió
-                    new_freq_id = freq_ids[freq_options.index(new_freq)]
-                    if new_freq_id != current_freq_id:
-                        if st.button("💾", key=f"save_freq_{idx}", help="Guardar cambio de frecuencia"):
-                            if update_client_activity_frequency(client_id, activity['activity_name'], new_freq_id):
-                                st.success(f"Frecuencia actualizada para {activity['activity_name']}")
-                                st.rerun()
+                    # Actualizar frecuencia si cambió (solo en modo edición)
+                    if not is_read_only_mode():
+                        new_freq_id = freq_ids[freq_options.index(new_freq)]
+                        if new_freq_id != current_freq_id:
+                            if st.button("Guardar", key=f"save_freq_{idx}", help="Guardar cambio de frecuencia"):
+                                if update_client_activity_frequency(client_id, activity['activity_name'], new_freq_id):
+                                    st.success(f"Frecuencia actualizada para {activity['activity_name']}")
+                                    st.rerun()
                 
                 with col3:
-                    # Botón para eliminar actividad
-                    if st.button("🗑️", key=f"delete_{idx}", help="Eliminar actividad"):
-                        if delete_client_activity(client_id, activity['activity_name']):
-                            st.success(f"Actividad {activity['activity_name']} eliminada")
-                            st.rerun()
+                    btn_col1, btn_col2 = st.columns(2)
+
+                    with btn_col1:
+                        if not is_read_only_mode():
+                            if st.button(
+                                "Recalcular",
+                                key=f"recalc_activity_{client_id}_{idx}",
+                                help="Recalcular fechas solo para esta actividad",
+                            ):
+                                selected_year = st.session_state.get(
+                                    f"year_selector_{client_id}",
+                                    datetime.now().year,
+                                )
+                                with st.spinner(
+                                    f"Recalculando {activity['activity_name']} ({selected_year})..."
+                                ):
+                                    success, total = recalculate_activity_dates_by_year(
+                                        client_id,
+                                        activity['activity_name'],
+                                        activity['frequency_type'],
+                                        activity['frequency_config'],
+                                        selected_year,
+                                    )
+                                    clear_cache_pattern(f"dates_{client_id}")
+
+                                if success:
+                                    st.success(
+                                        f"Fechas recalculadas para {activity['activity_name']} ({selected_year})."
+                                    )
+                                    st.rerun()
+                                else:
+                                    st.error("No se pudieron recalcular las fechas de la actividad.")
+                        else:
+                            st.button(
+                                "Recalcular",
+                                key=f"recalc_activity_{client_id}_{idx}",
+                                disabled=True,
+                                help="No disponible en producción",
+                            )
+
+                    with btn_col2:
+                        # Botón para eliminar actividad
+                        if not is_read_only_mode():
+                            if st.button("Eliminar", key=f"delete_{idx}", help="Eliminar actividad"):
+                                if delete_client_activity(client_id, activity['activity_name']):
+                                    st.success(f"Actividad '{activity['activity_name']}' eliminada")
+                                    st.rerun()
+                                else:
+                                    st.error("Error al eliminar la actividad")
+                        else:
+                            st.button("Eliminar", key=f"delete_{idx}", disabled=True, help="No disponible en producción")
             
             st.divider()
         
-        # Agregar nueva actividad
-        st.write("**Agregar Nueva Actividad:**")
-        
-        col1, col2, col3 = st.columns([3, 3, 1])
-        
-        with col1:
-            new_activity_name = st.text_input(
-                "Nombre de la actividad:",
-                placeholder="Ej: Inspección de Calidad",
-                key="new_activity_name"
-            )
-        
-        with col2:
-            freq_options = frequency_templates['name'].tolist()
-            freq_ids = frequency_templates['id'].tolist()
+        # Agregar nueva actividad (solo en modo edición)
+        if not is_read_only_mode():
+            st.write("**Agregar Nueva Actividad:**")
             
-            selected_freq = st.selectbox(
-                "Frecuencia:",
-                freq_options,
-                key="new_activity_freq"
-            )
-        
-        with col3:
-            if st.button("➕ Agregar", key="add_activity"):
-                if new_activity_name.strip():
-                    selected_freq_id = freq_ids[freq_options.index(selected_freq)]
-                    if add_client_activity(client_id, new_activity_name.strip(), selected_freq_id):
-                        st.success(f"Actividad '{new_activity_name}' agregada")
-                        st.rerun()
-                else:
-                    st.error("El nombre de la actividad es obligatorio")
+            col1, col2, col3 = st.columns([3, 3, 1])
+            
+            with col1:
+                new_activity_name = st.text_input(
+                    "Nombre de la actividad:",
+                    placeholder="Ej: Inspección de Calidad",
+                    key="new_activity_name"
+                )
+            
+            with col2:
+                freq_options = frequency_templates['name'].tolist()
+                freq_ids = frequency_templates['id'].tolist()
+                
+                selected_freq = st.selectbox(
+                    "Frecuencia:",
+                    freq_options,
+                    key="new_activity_freq"
+                )
+            
+            with col3:
+                if st.button("Agregar", key="add_activity"):
+                    if new_activity_name.strip():
+                        selected_freq_id = freq_ids[freq_options.index(selected_freq)]
+                        if add_client_activity(client_id, new_activity_name.strip(), selected_freq_id):
+                            st.success(f"Actividad '{new_activity_name}' agregada")
+                            st.rerun()
+                    else:
+                        st.error("El nombre de la actividad es obligatorio")
+        # No mostrar mensaje en modo de solo lectura, simplemente no mostrar la sección
+
+def show_client_activities_readonly(client_id):
+    """Muestra actividades y frecuencias del cliente en modo solo lectura"""
+    st.subheader("Actividades y Frecuencias")
+    activities = get_client_activities(client_id)
+    if activities.empty:
+        st.info("No hay actividades configuradas para este cliente.")
+        return
+    rows = []
+    for _, activity in activities.iterrows():
+        rows.append({
+            'Actividad': activity.get('activity_name', ''),
+            'Frecuencia': activity.get('frequency_name', '')
+        })
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 # ========== FUNCIONES DE MODAL DE EDICIÓN ==========
 
@@ -1537,10 +2675,34 @@ def show_edit_modal_improved(client):
         st.session_state.show_edit_modal = False
         return
     
-    st.header(f"✏️ Editar Cliente: {client['name']}")
+    if is_read_only_mode():
+        st.header(f"Ver Cliente: {client['name']}")
+        st.warning("**MODO SOLO LECTURA** - No se permiten modificaciones en producción")
+        
+        # Mostrar solo información de lectura
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("Volver"):
+                st.session_state.show_edit_modal = False
+                st.rerun()
+        
+        # Tabs de solo lectura
+        tab1, tab2, tab3 = st.tabs(["Datos del Cliente", "Actividades y Frecuencias", "Ver Fechas"])
+        
+        with tab1:
+            show_client_data_tab_improved(client)
+        
+        with tab2:
+            show_activities_management_tab(client)
+        
+        with tab3:
+            show_dates_editing_tab(client)
+        return
+    
+    st.header(f"Editar Cliente: {client['name']}")
     
     # Tabs para organizar mejor el contenido
-    tab1, tab2, tab3 = st.tabs(["📋 Datos del Cliente", "⚙️ Actividades y Frecuencias", "📅 Editar Fechas"])
+    tab1, tab2, tab3 = st.tabs(["Datos del Cliente", "Actividades y Frecuencias", "Editar Fechas"])
     
     with tab1:
         show_client_data_tab_improved(client)
@@ -1553,7 +2715,11 @@ def show_edit_modal_improved(client):
 
 def show_client_data_tab_improved(client):
     """Pestaña de datos del cliente en el modal de edición - Versión mejorada"""
-    st.subheader("Información del Cliente")
+    if is_read_only_mode():
+        st.subheader("Información del Cliente (Solo Lectura)")
+        st.info("Los campos están deshabilitados en el entorno de producción")
+    else:
+        st.subheader("Información del Cliente")
     
     # Validar que client no es None y tiene los datos necesarios
     if client is None:
@@ -1570,16 +2736,30 @@ def show_client_data_tab_improved(client):
             return client.get(field, '') or ''
         else:
             return client[field] if field in client and client[field] is not None else ''
+
+    def safe_int(field, default=0):
+        try:
+            return int(safe_get(field) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def original_int(data, field, default=0):
+        try:
+            if hasattr(data, 'get'):
+                return int(data.get(field, default) or default)
+            return int(data[field] if field in data and data[field] not in (None, '') else default)
+        except (TypeError, ValueError):
+            return default
     
     # Verificar si hay un mensaje de éxito en session_state
     if st.session_state.get(f'{key_prefix}_update_success', False):
-        st.success("✅ Cliente actualizado exitosamente! Los cambios se han guardado.")
+        st.success("Cliente actualizado exitosamente! Los cambios se han guardado.")
         # Limpiar el flag después de mostrarlo
         st.session_state[f'{key_prefix}_update_success'] = False
     
     # Verificar si hay un mensaje de error en session_state
     if st.session_state.get(f'{key_prefix}_update_error'):
-        st.error(f"❌ {st.session_state[f'{key_prefix}_update_error']}")
+        st.error(f"{st.session_state[f'{key_prefix}_update_error']}")
         # Limpiar el error después de mostrarlo
         del st.session_state[f'{key_prefix}_update_error']
     
@@ -1592,164 +2772,339 @@ def show_client_data_tab_improved(client):
             current_client = updated_client
         st.session_state[f'{key_prefix}_just_updated'] = False
     
-    # Mostrar campos editables
-    col1, col2 = st.columns(2)
+    # Mostrar campos editables (o de solo lectura)
+    col1, col2, col3, col4 = st.columns(4)
+    
+    readonly = is_read_only_mode()
+    if current_client is client:
+        numero_tarea_sap_value = safe_int('numero_tarea_sap', 0)
+    else:
+        try:
+            numero_tarea_sap_value = int(current_client.get('numero_tarea_sap', 0) or 0)
+        except (TypeError, ValueError):
+            numero_tarea_sap_value = 0
     
     with col1:
         name = st.text_input(
             "Nombre del Cliente", 
             value=safe_get('name') if current_client is client else current_client.get('name', ''),
             key=f"{key_prefix}_name_input",
-            help="Edita el nombre del cliente"
+            help="Edita el nombre del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         codigo_ag = st.text_input(
             "Código AG", 
             value=safe_get('codigo_ag') if current_client is client else current_client.get('codigo_ag', ''),
             key=f"{key_prefix}_codigo_ag_input",
-            help="Edita el código AG"
+            help="Edita el código AG" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
+    
+    with col2:
         codigo_we = st.text_input(
             "Código WE", 
             value=safe_get('codigo_we') if current_client is client else current_client.get('codigo_we', ''),
             key=f"{key_prefix}_codigo_we_input",
-            help="Edita el código WE"
+            help="Edita el código WE" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
-    
-    with col2:
         csr = st.text_input(
             "CSR", 
             value=safe_get('csr') if current_client is client else current_client.get('csr', ''),
             key=f"{key_prefix}_csr_input",
-            help="Edita el CSR"
+            help="Edita el CSR" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
+    
+    with col3:
         vendedor = st.text_input(
             "Vendedor", 
             value=safe_get('vendedor') if current_client is client else current_client.get('vendedor', ''),
             key=f"{key_prefix}_vendedor_input",
-            help="Edita el vendedor"
+            help="Edita el vendedor" if not readonly else "Solo lectura en producción",
+            disabled=readonly
         )
         calendario_sap = st.text_input(
             "Calendario SAP", 
             value=safe_get('calendario_sap') if current_client is client else current_client.get('calendario_sap', ''),
             key=f"{key_prefix}_calendario_sap_input",
-            help="Edita el calendario SAP"
+            help="Edita el calendario SAP" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        numero_tarea_sap = st.number_input(
+            "Número de tarea SAP",
+            min_value=0,
+            step=1,
+            value=numero_tarea_sap_value,
+            key=f"{key_prefix}_numero_tarea_sap_input",
+            help="Número de tarea SAP del cliente",
+            disabled=readonly
         )
     
-    # Verificar si hay cambios (comparar con datos originales del cliente)
-    original_data = current_client if current_client is not client else client
-    has_changes = (
-        name != (original_data.get('name', '') if hasattr(original_data, 'get') else original_data['name']) or
-        codigo_ag != (original_data.get('codigo_ag', '') or '' if hasattr(original_data, 'get') else original_data['codigo_ag'] or '') or
-        codigo_we != (original_data.get('codigo_we', '') or '' if hasattr(original_data, 'get') else original_data['codigo_we'] or '') or
-        csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
-        vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
-        calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '')
-    )
+    with col4:
+        # Campos de categorización
+        tipos_cliente = get_tipos_cliente()
+        current_tipo = safe_get('tipo_cliente') if current_client is client else current_client.get('tipo_cliente', 'Otro')
+        try:
+            tipo_index = tipos_cliente.index(current_tipo)
+        except ValueError:
+            tipo_index = tipos_cliente.index('Otro')
+        
+        tipo_cliente = st.selectbox(
+            "Tipo de Cliente",
+            tipos_cliente,
+            index=tipo_index,
+            key=f"{key_prefix}_tipo_cliente_input",
+            help="Selecciona el tipo de cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        
+        regiones = get_regiones()
+        current_region = safe_get('region') if current_client is client else current_client.get('region', 'Otro')
+        try:
+            region_index = regiones.index(current_region)
+        except ValueError:
+            region_index = regiones.index('Otro')
+            
+        region = st.selectbox(
+            "Región",
+            regiones,
+            index=region_index,
+            key=f"{key_prefix}_region_input",
+            help="Selecciona la región" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        
+        paises = get_paises()
+        current_pais = safe_get('pais') if current_client is client else current_client.get('pais', 'Colombia')
+        try:
+            pais_index = paises.index(current_pais)
+        except ValueError:
+            pais_index = paises.index('Colombia')
+            
+        pais = st.selectbox(
+            "País",
+            paises,
+            index=pais_index,
+            key=f"{key_prefix}_pais_input",
+            help="Selecciona el país" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        estado = st.text_input(
+            "Estado",
+            value=safe_get('estado') if current_client is client else current_client.get('estado', ''),
+            key=f"{key_prefix}_estado_input",
+            help="Estado o provincia del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+        ciudad = st.text_input(
+            "Ciudad",
+            value=safe_get('ciudad') if current_client is client else current_client.get('ciudad', ''),
+            key=f"{key_prefix}_ciudad_input",
+            help="Ciudad del cliente" if not readonly else "Solo lectura en producción",
+            disabled=readonly
+        )
+    
+    # Verificar si hay cambios (solo si no estamos en modo readonly)
+    has_changes = False
+    if not readonly:
+        original_data = current_client if current_client is not client else client
+        original_num_tarea = original_int(original_data, 'numero_tarea_sap', 0)
+        original_estado = original_data.get('estado', '') if hasattr(original_data, 'get') else original_data.get('estado', '')
+        original_ciudad = original_data.get('ciudad', '') if hasattr(original_data, 'get') else original_data.get('ciudad', '')
+        has_changes = (
+            name != (original_data.get('name', '') if hasattr(original_data, 'get') else original_data['name']) or
+            codigo_ag != (original_data.get('codigo_ag', '') or '' if hasattr(original_data, 'get') else original_data['codigo_ag'] or '') or
+            codigo_we != (original_data.get('codigo_we', '') or '' if hasattr(original_data, 'get') else original_data['codigo_we'] or '') or
+            csr != (original_data.get('csr', '') or '' if hasattr(original_data, 'get') else original_data['csr'] or '') or
+            vendedor != (original_data.get('vendedor', '') or '' if hasattr(original_data, 'get') else original_data['vendedor'] or '') or
+            calendario_sap != (original_data.get('calendario_sap', '') or '' if hasattr(original_data, 'get') else original_data['calendario_sap'] or '') or
+            numero_tarea_sap != original_num_tarea or
+            estado != (original_estado or '') or
+            ciudad != (original_ciudad or '') or
+            tipo_cliente != (original_data.get('tipo_cliente', 'Otro') if hasattr(original_data, 'get') else original_data.get('tipo_cliente', 'Otro')) or
+            region != (original_data.get('region', 'Otro') if hasattr(original_data, 'get') else original_data.get('region', 'Otro')) or
+            pais != (original_data.get('pais', 'Colombia') if hasattr(original_data, 'get') else original_data.get('pais', 'Colombia'))
+        )
     
     # Mostrar indicador de cambios
     if has_changes:
-        st.info("✏️ **Hay cambios pendientes de guardar**")
+        st.info("**Hay cambios pendientes de guardar**")
         
         # Mostrar los cambios específicos
         with st.expander("Ver detalles de los cambios"):
             def get_original_value(field):
                 if hasattr(original_data, 'get'):
-                    return original_data.get(field, '') or ''
+                    value = original_data.get(field, '')
+                    # Manejar valores por defecto para los nuevos campos
+                    if field in ['tipo_cliente', 'region'] and not value:
+                        return 'Otro'
+                    if field == 'numero_tarea_sap' and value in (None, ''):
+                        return 0
+                    if field in ['estado', 'ciudad'] and value in (None, ''):
+                        return ''
+                    return value or ''
                 else:
-                    return original_data[field] if field in original_data and original_data[field] is not None else ''
+                    value = original_data[field] if field in original_data and original_data[field] is not None else ''
+                    # Manejar valores por defecto para los nuevos campos
+                    if field in ['tipo_cliente', 'region'] and not value:
+                        return 'Otro'
+                    if field == 'pais' and not value:
+                        return 'Colombia'
+                    if field == 'numero_tarea_sap' and value in (None, ''):
+                        return 0
+                    if field in ['estado', 'ciudad'] and value in (None, ''):
+                        return ''
+                    return value
             
             if name != get_original_value('name'):
-                st.write(f"• **Nombre:** '{get_original_value('name')}' → '{name}'")
+                st.write(f"- **Nombre:** '{get_original_value('name')}' -> '{name}'")
             if codigo_ag != get_original_value('codigo_ag'):
-                st.write(f"• **Código AG:** '{get_original_value('codigo_ag')}' → '{codigo_ag}'")
+                st.write(f"- **Código AG:** '{get_original_value('codigo_ag')}' -> '{codigo_ag}'")
             if codigo_we != get_original_value('codigo_we'):
-                st.write(f"• **Código WE:** '{get_original_value('codigo_we')}' → '{codigo_we}'")
+                st.write(f"- **Código WE:** '{get_original_value('codigo_we')}' -> '{codigo_we}'")
             if csr != get_original_value('csr'):
-                st.write(f"• **CSR:** '{get_original_value('csr')}' → '{csr}'")
+                st.write(f"- **CSR:** '{get_original_value('csr')}' -> '{csr}'")
             if vendedor != get_original_value('vendedor'):
-                st.write(f"• **Vendedor:** '{get_original_value('vendedor')}' → '{vendedor}'")
+                st.write(f"- **Vendedor:** '{get_original_value('vendedor')}' -> '{vendedor}'")
             if calendario_sap != get_original_value('calendario_sap'):
-                st.write(f"• **Calendario SAP:** '{get_original_value('calendario_sap')}' → '{calendario_sap}'")
+                st.write(f"- **Calendario SAP:** '{get_original_value('calendario_sap')}' -> '{calendario_sap}'")
+            # Manejo robusto por si el valor original no es convertible a int (NaN/'' etc.)
+            try:
+                original_num_tarea_safe = int(get_original_value('numero_tarea_sap'))
+            except Exception:
+                original_num_tarea_safe = 0
+            if numero_tarea_sap != original_num_tarea_safe:
+                st.write(f"- **Número tarea SAP:** '{original_num_tarea_safe}' -> '{numero_tarea_sap}'")
+            if estado != get_original_value('estado'):
+                st.write(f"- **Estado:** '{get_original_value('estado')}' -> '{estado}'")
+            if ciudad != get_original_value('ciudad'):
+                st.write(f"- **Ciudad:** '{get_original_value('ciudad')}' -> '{ciudad}'")
+            if tipo_cliente != get_original_value('tipo_cliente'):
+                st.write(f"- **Tipo Cliente:** '{get_original_value('tipo_cliente')}' -> '{tipo_cliente}'")
+            if region != get_original_value('region'):
+                st.write(f"- **Región:** '{get_original_value('region')}' -> '{region}'")
+            if pais != get_original_value('pais'):
+                st.write(f"- **País:** '{get_original_value('pais')}' -> '{pais}'")
     
-    # Botones de acción
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        if st.button("💾 Guardar Información del Cliente", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_save_data",
-                    disabled=not has_changes):
-            if name.strip():
-                try:
-                    with st.spinner("🔄 Actualizando cliente..."):
-                        # Realizar la actualización
-                        success = update_client(client_id, name, codigo_ag, codigo_we, csr, vendedor, calendario_sap)
-                    
-                    if success:
-                        # Establecer flags para mostrar mensaje de éxito y recargar datos
-                        st.session_state[f'{key_prefix}_update_success'] = True
-                        st.session_state[f'{key_prefix}_just_updated'] = True
+    # Botones de acción (solo en modo edición)
+    if not readonly:
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            if st.button("Guardar Información del Cliente", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_save_data",
+                        disabled=not has_changes):
+                if name.strip():
+                    try:
+                        with st.spinner("Actualizando cliente..."):
+                            # Realizar la actualización
+                            success = update_client(
+                                client_id,
+                                name,
+                                codigo_ag,
+                                codigo_we,
+                                csr,
+                                vendedor,
+                                calendario_sap,
+                                tipo_cliente,
+                                region,
+                                pais,
+                                numero_tarea_sap,
+                                estado,
+                                ciudad
+                            )
                         
-                        # Limpiar los inputs para que se recarguen con los nuevos valores
-                        input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
-                                     f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                                     f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
-                        
-                        for key in input_keys:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        # Hacer rerun para mostrar la actualización SIN cerrar el modal
+                        if success:
+                            # Establecer flags para mostrar mensaje de éxito y recargar datos
+                            st.session_state[f'{key_prefix}_update_success'] = True
+                            st.session_state[f'{key_prefix}_just_updated'] = True
+                            
+                            # Limpiar los inputs para que se recarguen con los nuevos valores
+                            input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
+                                         f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
+                                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
+                                         f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input",
+                                         f"{key_prefix}_pais_input", f"{key_prefix}_numero_tarea_sap_input",
+                                         f"{key_prefix}_estado_input", f"{key_prefix}_ciudad_input"]
+                            
+                            for key in input_keys:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            
+                            # Hacer rerun para mostrar la actualización SIN cerrar el modal
+                            st.rerun()
+                        else:
+                            st.session_state[f'{key_prefix}_update_error'] = "Error al actualizar cliente en la base de datos"
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.session_state[f'{key_prefix}_update_error'] = f"Error al actualizar cliente: {e}"
                         st.rerun()
-                    else:
-                        st.session_state[f'{key_prefix}_update_error'] = "Error al actualizar cliente en la base de datos"
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.session_state[f'{key_prefix}_update_error'] = f"Error al actualizar cliente: {e}"
-                    st.rerun()
-            else:
-                st.error("❌ El nombre del cliente es obligatorio")
-    
-    with col2:
-        if st.button("🔄 Resetear", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_reset_data",
-                    help="Restaurar valores originales"):
-            # Limpiar los keys de input para forzar recarga con valores originales
-            input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
-                         f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
-                         f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input"]
-            
-            for key in input_keys:
-                if key in st.session_state:
+                else:
+                    st.error("El nombre del cliente es obligatorio")
+        
+        with col2:
+            if st.button("Resetear", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_reset_data",
+                        help="Restaurar valores originales"):
+                # Limpiar los keys de input para forzar recarga con valores originales
+                input_keys = [f"{key_prefix}_name_input", f"{key_prefix}_codigo_ag_input", 
+                             f"{key_prefix}_codigo_we_input", f"{key_prefix}_csr_input",
+                             f"{key_prefix}_vendedor_input", f"{key_prefix}_calendario_sap_input",
+                             f"{key_prefix}_tipo_cliente_input", f"{key_prefix}_region_input",
+                             f"{key_prefix}_numero_tarea_sap_input", f"{key_prefix}_estado_input",
+                             f"{key_prefix}_ciudad_input"]
+                
+                for key in input_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                # Limpiar también los flags de actualización
+                if f'{key_prefix}_just_updated' in st.session_state:
+                    del st.session_state[f'{key_prefix}_just_updated']
+                
+                st.rerun()
+        
+        with col3:
+            if st.button("Cerrar", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_close_modal",
+                        help="Cerrar sin guardar cambios"):
+                # Limpiar el modal
+                st.session_state.show_edit_modal = False
+                # Limpiar todos los estados relacionados con la edición
+                keys_to_clear = [key for key in st.session_state.keys() if key.startswith(f'{key_prefix}_')]
+                for key in keys_to_clear:
                     del st.session_state[key]
-            
-            # Limpiar también los flags de actualización
-            if f'{key_prefix}_just_updated' in st.session_state:
-                del st.session_state[f'{key_prefix}_just_updated']
-            
-            st.rerun()
-    
-    with col3:
-        if st.button("✖️ Cerrar", 
-                    use_container_width=True, 
-                    key=f"{key_prefix}_close_modal",
-                    help="Cerrar sin guardar cambios"):
-            # Cerrar modal y limpiar estados
-            st.session_state.show_edit_modal = False
-            
-            # Limpiar todos los keys relacionados con este cliente
-            keys_to_clear = [key for key in st.session_state.keys() 
-                           if key.startswith(f"edit_client_{client_id}")]
-            
-            for key in keys_to_clear:
-                del st.session_state[key]
-            
-            st.rerun()
+                st.rerun()
+    else:
+        # En modo solo lectura, solo mostrar botón de cerrar
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("Cerrar", 
+                        use_container_width=True, 
+                        key=f"{key_prefix}_close_readonly"):
+                st.session_state.show_edit_modal = False
+                st.rerun()
 
 def show_activities_management_tab(client):
     """Pestaña de gestión de actividades en el modal de edición"""
+    # En modo de solo lectura, solo mostrar las actividades sin posibilidad de edición
+    if is_read_only_mode():
+        st.subheader("Actividades del Cliente (Solo Lectura)")
+        
+        activities = get_client_activities(client['id'])
+        if not activities.empty:
+            # Mostrar solo información de lectura
+            for _, activity in activities.iterrows():
+                st.write(f"- **{activity['activity_name']}**")
+        else:
+            st.info("No hay actividades configuradas para este cliente.")
+        return
+    
     st.subheader("Gestión de Actividades y Frecuencias")
     
     activities = get_client_activities(client['id'])
@@ -1791,13 +3146,13 @@ def show_activities_management_tab(client):
                         new_freq_id = freq_ids[freq_options.index(new_freq)]
                         
                         if new_freq_id != activity['frequency_template_id']:
-                            if st.button(f"💾 Actualizar", key=f"modal_update_{idx}"):
+                            if st.button(f"Actualizar", key=f"modal_update_{idx}"):
                                 if update_client_activity_frequency(client['id'], activity['activity_name'], new_freq_id):
                                     st.success(f"Frecuencia actualizada para {activity['activity_name']}")
                                     st.rerun()
                     
                     with col3:
-                        if st.button("🗑️", key=f"modal_delete_{idx}", help="Eliminar actividad"):
+                        if st.button("Eliminar", key=f"modal_delete_{idx}", help="Eliminar actividad"):
                             if delete_client_activity(client['id'], activity['activity_name']):
                                 st.success(f"Actividad eliminada")
                                 st.rerun()
@@ -1819,7 +3174,7 @@ def show_activities_management_tab(client):
                 
                 selected_freq = st.selectbox("Frecuencia:", freq_options)
             
-            if st.form_submit_button("➕ Agregar Actividad"):
+            if st.form_submit_button("Agregar Actividad"):
                 if new_activity_name.strip():
                     selected_freq_id = freq_ids[freq_options.index(selected_freq)]
                     if add_client_activity(client['id'], new_activity_name.strip(), selected_freq_id):
@@ -1829,7 +3184,7 @@ def show_activities_management_tab(client):
                     st.error("El nombre de la actividad es obligatorio")
         
         # Botón para recalcular fechas después de cambios
-        if st.button("🔄 Recalcular Todas las Fechas", use_container_width=True):
+        if st.button("Recalcular Todas las Fechas", use_container_width=True):
             with st.spinner("Recalculando fechas para todo el año..."):
                 recalculate_client_dates(client['id'])
             st.success("Fechas recalculadas con las nuevas frecuencias")
@@ -1837,6 +3192,18 @@ def show_activities_management_tab(client):
 
 def show_dates_editing_tab(client):
     """Pestaña de edición de fechas en el modal de edición"""
+    if is_read_only_mode():
+        st.subheader("Fechas del Cliente (Solo Lectura)")
+        st.info("La edición de fechas está deshabilitada en el entorno de producción")
+        
+        # Mostrar fechas en modo de solo lectura
+        dates_df = get_calculated_dates(client['id'])
+        if not dates_df.empty:
+            st.dataframe(dates_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay fechas calculadas para este cliente.")
+        return
+    
     st.subheader("Edición Manual de Fechas")
     
     dates_df = get_calculated_dates(client['id'])
@@ -1887,12 +3254,12 @@ def show_dates_editing_tab(client):
                                 edited_dates[position] = str(new_date)
             
             # Botón para guardar fechas de esta actividad
-            if st.button(f"💾 Guardar fechas de {selected_activity}", 
+            if st.button(f"Guardar fechas de {selected_activity}", 
                         key=f"modal_save_{selected_activity}", 
                         use_container_width=True):
                 dates_list = [edited_dates[pos] for pos in range(1, 9)]
                 save_calculated_dates(client['id'], selected_activity, dates_list)
-                st.success(f"✅ Fechas actualizadas para {selected_activity}")
+                st.success(f"Fechas actualizadas para {selected_activity}")
                 st.rerun()
     else:
         st.info("No hay fechas calculadas. Ve a la pestaña 'Actividades y Frecuencias' y presiona 'Recalcular Todas las Fechas'.")
@@ -1901,7 +3268,12 @@ def show_dates_editing_tab(client):
 
 def show_add_client():
     """Muestra el formulario para agregar un nuevo cliente"""
-    st.header("➕ Agregar Nuevo Cliente")
+    
+    # Verificar permisos - Solo administradores pueden agregar clientes
+    require_permission('modify_clients', 
+                      "❌ No tienes permisos para agregar clientes. Se requiere rol de administrador.")
+    
+    st.header("Agregar Nuevo Cliente")
     
     # Obtener frecuencias disponibles
     frequency_templates = get_frequency_templates()
@@ -1911,29 +3283,69 @@ def show_add_client():
         return
     
     with st.form("add_client_form"):
-        st.subheader("📋 Información del Cliente")
+        st.subheader("Información del Cliente")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             name = st.text_input("Nombre del Cliente *", placeholder="Ingresa el nombre completo")
             codigo_ag = st.text_input("Código AG", placeholder="Código AG")
-            codigo_we = st.text_input("Código WE", placeholder="Código WE")
         
         with col2:
+            codigo_we = st.text_input("Código WE", placeholder="Código WE")
             csr = st.text_input("CSR", placeholder="CSR asignado")
+        
+        with col3:
             vendedor = st.text_input("Vendedor", placeholder="Vendedor asignado")
-            calendario_sap = st.text_input("Calendario SAP", placeholder="Calendario SAP")
+            calendario_sap = st.text_input(
+                "Calendario SAP", 
+                placeholder="Se asigna automáticamente",
+                disabled=True,
+                help="Este campo se establece automáticamente basado en la frecuencia seleccionada para la actividad 'Albaranado'"
+            )
+            numero_tarea_sap = st.number_input(
+                "Número de tarea SAP",
+                min_value=0,
+                step=1,
+                value=0,
+                help="Identificador de tarea SAP para el cliente"
+            )
+        
+        with col4:
+            # Campos de categorización
+            tipos_cliente = get_tipos_cliente()
+            tipo_cliente = st.selectbox(
+                "Tipo de Cliente *",
+                tipos_cliente,
+                index=tipos_cliente.index("Otro")
+            )
+            
+            regiones = get_regiones()
+            region = st.selectbox(
+                "Región *",
+                regiones,
+                index=regiones.index("Otro")
+            )
+            
+            paises = get_paises()
+            pais = st.selectbox(
+                "País *",
+                paises,
+                index=paises.index("Colombia")
+            )
+            estado = st.text_input("Estado", placeholder="Estado/Provincia")
+            ciudad = st.text_input("Ciudad", placeholder="Ciudad")
         
         st.divider()
-        st.subheader("⚙️ Configuración de Actividades")
+        st.subheader("Configuración de Actividades")
         st.write("Define las actividades y sus frecuencias para este cliente:")
         
         # Lista de actividades a configurar
         activities_config = []
+        albaranado_sap_code = "0"  # Código SAP por defecto
         
-        # Actividades predeterminadas
-        default_activities = ["Fecha envío OC", "Fecha Entrega", "Albaranado", "Embarque"]
+        # Actividades predeterminadas (orden correcto sin Embarque)
+        default_activities = ["Fecha Envío OC", "Albaranado", "Fecha Entrega"]
         
         freq_options = frequency_templates['name'].tolist()
         freq_ids = frequency_templates['id'].tolist()
@@ -1954,15 +3366,28 @@ def show_add_client():
                 # Mostrar descripción de la frecuencia seleccionada
                 selected_template = frequency_templates[frequency_templates['name'] == selected_freq].iloc[0]
                 desc = format_frequency_description(selected_template['frequency_type'], selected_template['frequency_config'])
-                st.info(f"📅 {desc}")
+                st.info(f"{desc}")
+                
+                # Si es Albaranado, obtener el código SAP para mostrar
+                if activity == "Albaranado":
+                    albaranado_sap_code = selected_template.get('calendario_sap_code', '0')
             
             selected_freq_id = freq_ids[freq_options.index(selected_freq)]
             activities_config.append((activity, selected_freq_id))
         
+        # Mostrar el código SAP que se asignará automáticamente
+        st.subheader("Calendario SAP Automático")
+        if albaranado_sap_code and albaranado_sap_code != '0':
+            st.success(f"**Calendario SAP que se asignará:** {albaranado_sap_code}")
+            st.info("Este código se basa en la frecuencia seleccionada para la actividad 'Albaranado'")
+        else:
+            st.warning("**Calendario SAP:** Sin Calendario")
+            st.info("La frecuencia seleccionada para 'Albaranado' no tiene un código SAP asignado")
+        
         st.divider()
         
         # Actividades adicionales
-        st.subheader("➕ Actividades Adicionales (Opcional)")
+        st.subheader("Actividades Adicionales (Opcional)")
         
         num_additional = st.number_input("¿Cuántas actividades adicionales quieres agregar?", 
                                         min_value=0, max_value=5, value=0)
@@ -1989,19 +3414,32 @@ def show_add_client():
                 if additional_name.strip() and additional_freq:
                     selected_template = frequency_templates[frequency_templates['name'] == additional_freq].iloc[0]
                     desc = format_frequency_description(selected_template['frequency_type'], selected_template['frequency_config'])
-                    st.info(f"📅 {desc}")
+                    st.info(f"{desc}")
             
             if additional_name.strip():
                 additional_freq_id = freq_ids[freq_options.index(additional_freq)]
                 activities_config.append((additional_name.strip(), additional_freq_id))
         
-        submitted = st.form_submit_button("✅ Crear Cliente con Configuración", use_container_width=True)
+        submitted = st.form_submit_button("Crear Cliente con Configuración", use_container_width=True)
         
         if submitted:
             if name.strip():
                 with st.spinner("Creando cliente y configurando actividades..."):
-                    # Crear cliente
-                    client_id = add_client(name.strip(), codigo_ag, codigo_we, csr, vendedor, calendario_sap)
+                    # Crear cliente usando el código SAP automático de Albaranado
+                    client_id = add_client(
+                        name.strip(),
+                        codigo_ag,
+                        codigo_we,
+                        csr,
+                        vendedor,
+                        albaranado_sap_code,
+                        tipo_cliente,
+                        region,
+                        pais,
+                        numero_tarea_sap,
+                        estado,
+                        ciudad
+                    )
                     
                     if client_id:
                         # Agregar actividades configuradas
@@ -2011,14 +3449,14 @@ def show_add_client():
                         # Calcular fechas basadas en la configuración
                         recalculate_client_dates(client_id)
                         
-                        st.success(f"✅ Cliente '{name}' creado exitosamente con {len(activities_config)} actividades configuradas")
+                        st.success(f"Cliente '{name}' creado exitosamente con {len(activities_config)} actividades configuradas")
                         
                         # Guardar el ID del cliente recién creado en session_state
                         st.session_state.new_client_created = client_id
                         st.session_state.new_client_name = name
                         
                         # Mostrar las fechas calculadas
-                        st.subheader("📅 Calendario Generado")
+                        st.subheader("Calendario Generado")
                         calendar_df = create_client_calendar_table(client_id, show_full_year=False)
                         
                         if not calendar_df.empty:
@@ -2029,7 +3467,7 @@ def show_add_client():
                                 from calendar_utils import get_client_year_summary
                                 summary = get_client_year_summary(client_id)
                                 
-                                st.info(f"🗓️ **Resumen del Año:** {summary['total_fechas']} fechas programadas "
+                                st.info(f"**Resumen del Año:** {summary['total_fechas']} fechas programadas "
                                        f"en {summary['meses_con_actividad']} meses para {summary['actividades']} actividades")
                             except:
                                 pass
@@ -2037,18 +3475,18 @@ def show_add_client():
                             st.warning("No se pudieron calcular las fechas. Puedes configurarlas desde el detalle del cliente.")
                             
                     else:
-                        st.error("❌ Error al crear el cliente. Revisa los logs.")
+                        st.error("Error al crear el cliente. Revisa los logs.")
             else:
-                st.error("❌ El nombre del cliente es obligatorio")
+                st.error("El nombre del cliente es obligatorio")
     
     # Mostrar botón para ver detalle solo si se creó un cliente recientemente
     if st.session_state.get('new_client_created'):
         st.divider()
-        st.subheader("🎉 ¡Cliente Creado Exitosamente!")
+        st.subheader("¡Cliente Creado Exitosamente!")
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button(f"📋 Ver Detalle de '{st.session_state.get('new_client_name', 'Cliente')}'", 
+            if st.button(f"Ver Detalle de '{st.session_state.get('new_client_name', 'Cliente')}'", 
                         key="view_new_client_detail", 
                         use_container_width=True,
                         type="primary"):
@@ -2061,14 +3499,14 @@ def show_add_client():
         
         # Botón para crear otro cliente
         with col1:
-            if st.button("➕ Crear Otro", key="create_another_client"):
+            if st.button("Crear Otro", key="create_another_client"):
                 # Limpiar el estado de cliente recién creado
                 del st.session_state['new_client_created']
                 del st.session_state['new_client_name']
                 st.rerun()
         
         with col3:
-            if st.button("📊 Ver Galería", key="view_gallery_from_add"):
+            if st.button("Ver Galería", key="view_gallery_from_add"):
                 # Limpiar el estado de cliente recién creado
                 del st.session_state['new_client_created']
                 del st.session_state['new_client_name']
@@ -2078,19 +3516,74 @@ def show_add_client():
 
 def show_manage_frequencies():
     """Muestra la interfaz de administración de frecuencias"""
-    st.header("⚙️ Administrar Frecuencias")
+    
+    # Verificar permisos - Solo administradores pueden modificar frecuencias
+    require_permission('modify_frequencies', 
+                      "❌ No tienes permisos para administrar frecuencias. Se requiere rol de administrador.")
+    
+    st.header("Administrar Frecuencias")
     
     # Inicializar estados para la edición
     if 'editing_frequency' not in st.session_state:
         st.session_state.editing_frequency = None
     
-    # Mostrar frecuencias existentes en tabla editable
-    st.subheader("📋 Frecuencias Disponibles")
-    
+    # Obtener todas las frecuencias
     templates = get_frequency_templates()
     
-    if not templates.empty:
-        show_frequency_list(templates)
+    if templates.empty:
+        st.info("No hay frecuencias registradas. Agrega una frecuencia para comenzar.")
+        show_add_frequency_form()
+        return
+    
+    # Barra de búsqueda
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        search_term = st.text_input(
+            "Buscar frecuencias por nombre o descripción:",
+            placeholder="Ingresa tu búsqueda...",
+            key="frequency_search",
+            help="Busca frecuencias por nombre o descripción"
+        )
+    
+    with col2:
+        if st.button("Limpiar", key="clear_frequency_search", help="Limpiar búsqueda"):
+            if "frequency_search" in st.session_state:
+                del st.session_state["frequency_search"]
+            st.rerun()
+    
+    # Filtrar frecuencias basado en el término de búsqueda
+    filtered_templates = templates.copy()
+    
+    if search_term and search_term.strip():
+        filtered_templates = filtered_templates[
+            filtered_templates['name'].str.contains(search_term, case=False, na=False) |
+            filtered_templates['description'].str.contains(search_term, case=False, na=False)
+        ]
+    
+    # Mostrar información de resultados
+    total_frequencies = len(templates)
+    shown_frequencies = len(filtered_templates)
+    
+    if shown_frequencies == total_frequencies:
+        st.info(f"Mostrando todas las frecuencias ({total_frequencies} total)")
+    else:
+        st.info(f"Mostrando {shown_frequencies} de {total_frequencies} frecuencias")
+        if search_term:
+            st.caption(f"Filtro activo: '{search_term}'")
+    
+    # Mostrar frecuencias existentes en contenedor scrolleable
+    st.subheader("Frecuencias Disponibles")
+    
+    if not filtered_templates.empty:
+        # Crear contenedor scrolleable con altura fija
+        with st.container(height=500):
+            show_frequency_list(filtered_templates)
+    else:
+        st.warning("No se encontraron frecuencias que coincidan con la búsqueda")
+        st.info("Intenta con términos de búsqueda más generales")
+    
+    st.divider()
     
     # Solo mostrar el formulario de agregar si no estamos editando
     if st.session_state.editing_frequency is None:
@@ -2123,36 +3616,49 @@ def show_frequency_view(template):
         config_text = format_frequency_description(template['frequency_type'], template['frequency_config'])
         st.write(f"**Tipo:** {config_text}")
         
+        # Mostrar calendario SAP
+        sap_code = template.get('calendario_sap_code', '0')
+        if sap_code and sap_code != '0':
+            st.write(f"**Calendario SAP:** {sap_code}")
+        else:
+            st.write("**Calendario SAP:** Sin Calendario")
+        
         # Mostrar uso
         usage_count = get_frequency_usage_count(template['id'])
         if usage_count > 0:
-            st.write(f"🔗 **En uso:** {usage_count} actividad(es)")
+            st.write(f"**En uso:** {usage_count} actividad(es)")
         else:
-            st.write("📝 **Sin uso**")
+            st.write("**Sin uso**")
     
     with col3:
-        if st.button("✏️ Editar", key=f"edit_{template['id']}", use_container_width=True):
-            st.session_state.editing_frequency = template['id']
-            st.rerun()
+        if not is_read_only_mode():
+            if st.button("Editar", key=f"edit_{template['id']}", use_container_width=True):
+                st.session_state.editing_frequency = template['id']
+                st.rerun()
+        else:
+            st.button("Editar", key=f"edit_{template['id']}", disabled=True, use_container_width=True, help="No disponible en producción")
     
     with col4:
-        usage_count = get_frequency_usage_count(template['id'])
-        if usage_count == 0:
-            if st.button("🗑️ Eliminar", key=f"delete_{template['id']}", use_container_width=True):
-                success, message = delete_frequency_template(template['id'])
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
+        if not is_read_only_mode():
+            usage_count = get_frequency_usage_count(template['id'])
+            if usage_count == 0:
+                if st.button("Eliminar", key=f"delete_{template['id']}", use_container_width=True):
+                    success, message = delete_frequency_template(template['id'])
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+            else:
+                st.button("En uso", key=f"disabled_{template['id']}", 
+                        disabled=True, use_container_width=True,
+                        help=f"No se puede eliminar porque está siendo usada por {usage_count} actividad(es)")
         else:
-            st.button("🔒 En uso", key=f"disabled_{template['id']}", 
-                    disabled=True, use_container_width=True,
-                    help=f"No se puede eliminar porque está siendo usada por {usage_count} actividad(es)")
+            st.button("Eliminar", key=f"delete_{template['id']}", disabled=True, use_container_width=True, help="No disponible en producción")
 
 def show_frequency_edit_form(template):
     """Muestra el formulario de edición de una frecuencia"""
-    st.markdown("### ✏️ Editando Frecuencia")
+    st.markdown("### Editando Frecuencia")
     
     with st.form(f"edit_frequency_{template['id']}"):
         col1, col2 = st.columns(2)
@@ -2160,6 +3666,15 @@ def show_frequency_edit_form(template):
         with col1:
             edit_name = st.text_input("Nombre:", value=template['name'])
             edit_description = st.text_area("Descripción:", value=template['description'] or "")
+            
+            # Campo para calendario SAP
+            current_sap_code = template.get('calendario_sap_code', '0')
+            edit_sap_code = st.text_input(
+                "Código Calendario SAP:",
+                value=current_sap_code if current_sap_code != '0' else '',
+                placeholder="Ej: 16, M7, 17, etc.",
+                help="Deja vacío para 'Sin Calendario' o ingresa el código SAP correspondiente"
+            )
         
         with col2:
             edit_freq_type = st.selectbox(
@@ -2176,14 +3691,15 @@ def show_frequency_edit_form(template):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.form_submit_button("💾 Guardar Cambios", use_container_width=True):
+            if st.form_submit_button("Guardar Cambios", use_container_width=True):
                 if edit_name.strip() and edit_freq_config:
                     if update_frequency_template(
                         template['id'], 
                         edit_name.strip(), 
                         edit_freq_type, 
                         edit_freq_config, 
-                        edit_description
+                        edit_description,
+                        edit_sap_code  # Pasar el código SAP manual
                     ):
                         st.success(f"Frecuencia '{edit_name}' actualizada exitosamente")
                         st.session_state.editing_frequency = None
@@ -2191,10 +3707,11 @@ def show_frequency_edit_form(template):
                     else:
                         st.error("Error al actualizar la frecuencia")
                 else:
+                    st.error("El nombre y la configuración son obligatorios")
                     st.error("Completa todos los campos obligatorios")
         
         with col2:
-            if st.form_submit_button("❌ Cancelar", use_container_width=True):
+            if st.form_submit_button("Cancelar", use_container_width=True):
                 st.session_state.editing_frequency = None
                 st.rerun()
         
@@ -2215,6 +3732,9 @@ def show_frequency_config_inputs(freq_type, current_config_json):
         col1, col2 = st.columns(2)
         with col1:
             current_weekday = current_config.get('weekday', 0)
+            # Asegurar que el índice esté dentro del rango válido
+            if current_weekday < 0 or current_weekday >= 7:
+                current_weekday = 0
             weekday_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
             edit_weekday = st.selectbox(
                 "Día de la semana:",
@@ -2223,10 +3743,15 @@ def show_frequency_config_inputs(freq_type, current_config_json):
             )
         with col2:
             current_weeks = current_config.get('weeks', [1])
+            # Filtrar solo valores válidos para el multiselect
+            valid_weeks = [week for week in current_weeks if week in [1, 2, 3, 4]]
+            if not valid_weeks:
+                valid_weeks = [1]  # valor por defecto si no hay válidos
+                
             edit_weeks = st.multiselect(
                 "Semanas del mes:",
                 [1, 2, 3, 4],
-                default=current_weeks
+                default=valid_weeks
             )
         
         if edit_weeks:
@@ -2237,10 +3762,15 @@ def show_frequency_config_inputs(freq_type, current_config_json):
     
     elif freq_type == "specific_days":
         current_days = current_config.get('days', [1])
+        # Filtrar solo valores válidos para el multiselect
+        valid_days = [day for day in current_days if day in range(1, 32)]
+        if not valid_days:
+            valid_days = [1]  # valor por defecto si no hay válidos
+            
         edit_days = st.multiselect(
             "Días del mes:",
             list(range(1, 32)),
-            default=current_days
+            default=valid_days
         )
         
         if edit_days:
@@ -2252,7 +3782,7 @@ def show_frequency_config_inputs(freq_type, current_config_json):
 
 def show_add_frequency_form():
     """Muestra el formulario para agregar una nueva frecuencia"""
-    st.subheader("➕ Agregar Nueva Frecuencia")
+    st.subheader("Agregar Nueva Frecuencia")
     
     with st.form("add_frequency_form"):
         col1, col2 = st.columns(2)
@@ -2267,6 +3797,13 @@ def show_add_frequency_form():
         
         with col2:
             description = st.text_area("Descripción", placeholder="Describe cuándo ocurre esta frecuencia")
+            
+            # Campo para calendario SAP
+            sap_code = st.text_input(
+                "Código Calendario SAP:",
+                placeholder="Ej: 16, M7, 17, etc.",
+                help="Deja vacío para 'Sin Calendario' o ingresa el código SAP correspondiente"
+            )
         
         if freq_type == "nth_weekday":
             col1, col2 = st.columns(2)
@@ -2300,23 +3837,23 @@ def show_add_frequency_form():
             else:
                 freq_config = ""
         
-        submitted = st.form_submit_button("✅ Agregar Frecuencia", use_container_width=True)
+        submitted = st.form_submit_button("Agregar Frecuencia", use_container_width=True)
         
         if submitted:
             if freq_name.strip() and freq_config:
-                if add_frequency_template(freq_name.strip(), freq_type, freq_config, description):
-                    st.success(f"✅ Frecuencia '{freq_name}' agregada exitosamente")
+                if add_frequency_template(freq_name.strip(), freq_type, freq_config, description, sap_code):
+                    st.success(f"Frecuencia '{freq_name}' agregada exitosamente")
                     st.rerun()
                 else:
-                    st.error("❌ Error al agregar la frecuencia")
+                    st.error("Error al agregar la frecuencia")
             else:
-                st.error("❌ Completa todos los campos obligatorios")
+                st.error("Completa todos los campos obligatorios")
 
 # ========== FUNCIONES DE UTILIDAD Y HELPERS ==========
 
 def show_date_editing_section(client_id):
     """Muestra la sección de edición de fechas individuales (versión legacy)"""
-    st.subheader("✏️ Editar Fechas")
+    st.subheader("Editar Fechas")
     
     dates_df = get_calculated_dates(client_id)
     
@@ -2363,7 +3900,7 @@ def show_date_editing_section(client_id):
                                 else:
                                     edited_dates[position] = str(new_date)
                 
-                if st.form_submit_button("💾 Guardar Cambios"):
+                if st.form_submit_button("Guardar Cambios"):
                     # Guardar todas las fechas editadas
                     dates_list = [edited_dates[pos] for pos in range(1, 13)]
                     save_calculated_dates(client_id, selected_activity, dates_list)
@@ -2381,6 +3918,7 @@ def format_client_info_card(client):
         <p style="margin: 5px 0; font-size: 14px;"><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
         <p style="margin: 5px 0; font-size: 14px;"><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
         <p style="margin: 5px 0; font-size: 14px;"><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
+        <p style="margin: 5px 0; font-size: 14px;"><strong>País:</strong> {client.get('pais', 'N/A')}</p>
     </div>
     """
 
@@ -2411,15 +3949,15 @@ def show_success_message(message, duration=3):
 
 def show_error_message(message):
     """Muestra un mensaje de error"""
-    st.error(f"❌ {message}")
+    st.error(f"{message}")
 
 def show_info_message(message):
     """Muestra un mensaje informativo"""
-    st.info(f"ℹ️ {message}")
+    st.info(f"ℹ{message}")
 
 def show_warning_message(message):
     """Muestra un mensaje de advertencia"""
-    st.warning(f"⚠️ {message}")
+    st.warning(f"{message}")
 
 # ========== FUNCIONES DE VALIDACIÓN ==========
 

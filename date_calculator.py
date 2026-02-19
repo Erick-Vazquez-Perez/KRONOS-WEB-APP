@@ -119,6 +119,100 @@ def recalculate_client_dates(client_id):
         except Exception as e:
             print(f"Error calculando fechas para {activity['activity_name']}: {e}")
 
+def recalculate_client_dates_by_year(client_id, year):
+    """Recalcula fechas para un cliente para un año específico, preservando otros años"""
+    activities = get_client_activities(client_id)
+    
+    if activities.empty:
+        # Si no hay actividades, crear las predeterminadas
+        create_default_activities(client_id)
+        activities = get_client_activities(client_id)
+    
+    if activities.empty:
+        print(f"No se pudieron crear actividades para cliente {client_id}")
+        return
+    
+    # Calcular fechas para el año específico
+    start_date = datetime(year, 1, 1).date()
+    
+    print(f"Recalculando fechas para cliente {client_id} - Año {year}")
+    
+    for _, activity in activities.iterrows():
+        try:
+            # Calcular todas las fechas del año especificado
+            all_dates = calculate_dates_for_frequency(
+                activity['frequency_type'], 
+                activity['frequency_config'], 
+                start_date,
+                full_year=True
+            )
+            
+            if all_dates:
+                # Guardar fechas preservando otros años
+                save_calculated_dates_by_year_internal(client_id, activity['activity_name'], all_dates, year)
+                print(f"Guardadas {len(all_dates)} fechas para {activity['activity_name']} (año {year})")
+            else:
+                print(f"No se generaron fechas para {activity['activity_name']} en {year}")
+                
+        except Exception as e:
+            print(f"Error calculando fechas para {activity['activity_name']} en {year}: {e}")
+
+def recalculate_activity_dates_by_year(client_id, activity_name, frequency_type, frequency_config, year):
+    """Recalcula fechas para una actividad específica en un año dado, preservando otros años"""
+    if not activity_name or not frequency_type or not frequency_config:
+        print("Datos insuficientes para recalcular actividad")
+        return False, 0
+
+    try:
+        start_date = datetime(year, 1, 1).date()
+        all_dates = calculate_dates_for_frequency(
+            frequency_type,
+            frequency_config,
+            start_date,
+            full_year=True,
+        )
+
+        if not all_dates:
+            print(f"No se generaron fechas para {activity_name} en {year}")
+            return False, 0
+
+        save_calculated_dates_by_year_internal(client_id, activity_name, all_dates, year)
+        return True, len(all_dates)
+    except Exception as e:
+        print(f"Error recalculando {activity_name} en {year}: {e}")
+        return False, 0
+
+def save_calculated_dates_by_year_internal(client_id, activity_name, dates_list, year):
+    """Guarda todas las fechas del año para una actividad específica usando la nueva función de BD"""
+    if not dates_list:
+        print(f"No hay fechas para guardar para actividad {activity_name} del año {year}")
+        return
+    
+    from database import save_calculated_dates_by_year
+    
+    # Organizar fechas por meses para mejor visualización
+    dates_by_month = {}
+    
+    for date in dates_list:
+        if date.year == year:  # Solo fechas del año especificado
+            month_key = date.strftime('%Y-%m')
+            if month_key not in dates_by_month:
+                dates_by_month[month_key] = []
+            dates_by_month[month_key].append(date)
+    
+    # Guardar fechas usando posiciones secuenciales dentro de cada grupo
+    all_positions = []
+    position = 1
+    
+    for month_key in sorted(dates_by_month.keys()):
+        month_dates = sorted(dates_by_month[month_key])
+        for date in month_dates:
+            all_positions.append(date)
+            position += 1
+    
+    # Usar la nueva función que preserva otros años
+    save_calculated_dates_by_year(client_id, activity_name, all_positions, year)
+
 def save_calculated_dates_full_year(client_id, activity_name, dates_list):
     """Guarda todas las fechas del año para una actividad específica"""
     if not dates_list:
