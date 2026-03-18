@@ -126,6 +126,31 @@ def get_albaranado_clients_by_day(target_date, country_filter=None):
         df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'),))
     return df
 
+def get_delivery_clients_by_day(target_date, country_filter=None):
+    """Obtiene clientes con fecha de Entrega para un dia especifico, con filtro opcional de pais"""
+    if country_filter:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 3
+        AND date(cd.date) = ?
+        AND c.pais = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'), country_filter))
+    else:
+        query = """
+        SELECT c.name, c.codigo_ag, c.codigo_we, c.csr, c.vendedor, cd.date, c.tipo_cliente, c.region, c.calendario_sap, c.pais
+        FROM clients c
+        JOIN calculated_dates cd ON c.id = cd.client_id
+        WHERE cd.activity_id = 3
+        AND date(cd.date) = ?
+        ORDER BY c.name
+        """
+        df = _cached_query_df(query, (target_date.strftime('%Y-%m-%d'),))
+    return df
+
 def get_delivery_anomalies(country_filter=None):
     """Obtiene clientes donde la fecha de albaranado es mayor que la de entrega - solo del mes actual con filtro por país"""
     
@@ -475,246 +500,249 @@ def show_dashboard():
         # glmxuser ve todos los países pero sin selector
         pass
     
-    # ========== TABLAS DE ALERTAS (PRIMERA SECCIÓN) ==========
-    # Selector de fecha común para ambas tablas (limitado al mes corriente)
+    # ========== CONTENEDOR PRINCIPAL DEL DASHBOARD ==========
+    dashboard_container = st.container()
+
+    # ========== SECCION: PLANEACION ==========
     today = datetime.now().date()
     current_year = today.year
     # Ampliar el rango para navegar todo el año (no solo el mes corriente)
     start_of_year = date(current_year, 1, 1)
     end_of_year = date(current_year, 12, 31)
+    spanish_months = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
+    with dashboard_container:
+        planning_container = st.container()
+        indicators_container = st.container()
 
-    sel_col, _spacer = st.columns([1, 10])
-    with sel_col:
-        selected_date = st.date_input(
-            "Seleccionar fecha:",
-            value=today,
-            min_value=start_of_year,
-            max_value=end_of_year,
-            key="dashboard_common_date_selector",
-            format="DD/MM/YYYY"
-        )
+        with planning_container:
+            planning_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
+            st.subheader(f"Planeación{planning_suffix}")
 
-    col1, col2 = st.columns(2)
+            filter_col, selector_col, _spacer = st.columns([1, 1, 6])
+            with filter_col:
+                selected_date = st.date_input(
+                    "Seleccionar fecha:",
+                    value=today,
+                    min_value=start_of_year,
+                    max_value=end_of_year,
+                    key="dashboard_common_date_selector",
+                    format="DD/MM/YYYY"
+                )
 
-    with col1:
-        st.subheader("Órdenes de Compra")
-        
-        # Obtener clientes con fecha OC en la fecha seleccionada
-        oc_clients = get_oc_clients_by_day(selected_date, dashboard_country_filter)
-        
-        if not oc_clients.empty:
-            st.info(f"**{len(oc_clients)} clientes** con fecha OC el {selected_date.strftime('%d/%m/%Y')}")
-            
-            # Mostrar la tabla de clientes
-            display_df = oc_clients.copy()
-            display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%d/%m/%Y')
-            display_df = display_df.rename(columns={
-                'name': 'Cliente',
-                'codigo_ag': 'Cód. AG',
-                'codigo_we': 'Cód. WE',
-                'csr': 'CSR',
-                'vendedor': 'Vendedor',
-                'calendario_sap': 'Cal. SAP',
-                'date': 'Fecha OC',
-                'pais': 'País'
-            })
-            
-            # Seleccionar columnas clave para mostrar
-            if dashboard_country_filter:
-                # Si hay filtro de país, no mostrar la columna país (todos son del mismo país)
-                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha OC']
+            with selector_col:
+                planning_activity_options = {
+                    "Entregas": 3,
+                    "Órdenes de Compra": 1,
+                    "Albaranados": 2
+                }
+                planning_activity_label = st.selectbox(
+                    "Actividad:",
+                    options=list(planning_activity_options.keys()),
+                    index=0,
+                    key="planning_activity_selector"
+                )
+
+            if planning_activity_label == "Órdenes de Compra":
+                planning_df = get_oc_clients_by_day(selected_date, dashboard_country_filter)
+                date_label = "Fecha OC"
+            elif planning_activity_label == "Albaranados":
+                planning_df = get_albaranado_clients_by_day(selected_date, dashboard_country_filter)
+                date_label = "Fecha Albaranado"
             else:
-                # Si no hay filtro, mostrar la columna país
-                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'País', 'Fecha OC']
-            
-            display_df = display_df[key_columns]
-            
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
-            st.success(f"No hay órdenes de compra para {selected_date.strftime('%d/%m/%Y')}{country_text}")
-    
-    with col2:
-        st.subheader("Albaranes")
+                planning_df = get_delivery_clients_by_day(selected_date, dashboard_country_filter)
+                date_label = "Fecha Entrega"
 
-        # Obtener clientes con albaranado en el día seleccionado
-        albaranado_clients = get_albaranado_clients_by_day(selected_date, dashboard_country_filter)
+            if not planning_df.empty:
+                st.info(
+                    f"**{len(planning_df)} clientes** con {planning_activity_label.lower()} el {selected_date.strftime('%d/%m/%Y')}"
+                )
 
-        if not albaranado_clients.empty:
-            st.info(f"**{len(albaranado_clients)} clientes** con albaranado el {selected_date.strftime('%d/%m/%Y')}")
+                display_df = planning_df.copy()
+                display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%d/%m/%Y')
+                display_df = display_df.rename(columns={
+                    'name': 'Cliente',
+                    'codigo_ag': 'Cód. AG',
+                    'codigo_we': 'Cód. WE',
+                    'csr': 'CSR',
+                    'vendedor': 'Vendedor',
+                    'calendario_sap': 'Cal. SAP',
+                    'date': date_label,
+                    'pais': 'País'
+                })
 
-            display_df = albaranado_clients.copy()
-            display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%d/%m/%Y')
-            display_df = display_df.rename(columns={
-                'name': 'Cliente',
-                'codigo_ag': 'Cód. AG',
-                'codigo_we': 'Cód. WE',
-                'csr': 'CSR',
-                'vendedor': 'Vendedor',
-                'calendario_sap': 'Cal. SAP',
-                'date': 'Fecha Albaranado',
-                'pais': 'País'
-            })
+                if dashboard_country_filter:
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', date_label]
+                else:
+                    key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'País', date_label]
 
-            # Seleccionar columnas clave para mostrar
-            if dashboard_country_filter:
-                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'Fecha Albaranado']
+                display_df = display_df[key_columns]
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
-                key_columns = ['Cliente', 'Cód. AG', 'Cód. WE', 'CSR', 'Vendedor', 'Cal. SAP', 'País', 'Fecha Albaranado']
+                country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
+                st.success(
+                    f"No hay {planning_activity_label.lower()} para {selected_date.strftime('%d/%m/%Y')}{country_text}"
+                )
 
-            display_df = display_df[key_columns]
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            country_text = f" en {dashboard_country_display}" if dashboard_country_display else ""
-            st.success(f"No hay albaranes para {selected_date.strftime('%d/%m/%Y')}{country_text}")
-    
-    st.markdown("---")
-    
-    # ========== TARJETAS DE MÉTRICAS ==========
-    country_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
-    st.subheader(f"Métricas Generales{country_suffix}")
-    
-    # Obtener datos para las métricas
-    activity_counts = get_activity_counts(dashboard_country_filter)
-    total_clients = get_total_clients_count(dashboard_country_filter)
-    
-    # Crear diccionario de métricas
-    metrics = {}
-    for _, row in activity_counts.iterrows():
-        metrics[row['activity_name']] = {
-            'total': row['total_fechas'],
-            'clientes': row['clientes_con_actividad']
-        }
-    
-    # Mostrar tarjetas de métricas (4 columnas incluyendo total de clientes)
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        # Primera métrica: Total de Clientes
-        country_label = f"{dashboard_country_display}" if dashboard_country_display else "sistema"
-        st.markdown(get_metric_card_html(
-            "Total Clientes", 
-            str(total_clients), 
-            f"en {country_label}",
-            "#9467bd"
-        ), unsafe_allow_html=True)
-    
-    with col2:
-        oc_total = metrics.get('Fecha Envío OC', {}).get('total', 0)
-        oc_clientes = metrics.get('Fecha Envío OC', {}).get('clientes', 0)
-        st.markdown(get_metric_card_html(
-            "Fechas de envío OC", 
-            str(oc_total), 
-            f"{oc_clientes} clientes",
-            "#1f77b4"
-        ), unsafe_allow_html=True)
-    
-    with col3:
-        alb_total = metrics.get('Albaranado', {}).get('total', 0)
-        alb_clientes = metrics.get('Albaranado', {}).get('clientes', 0)
-        st.markdown(get_metric_card_html(
-            "Fechas de Albaranado", 
-            str(alb_total), 
-            f"{alb_clientes} clientes",
-            "#ff7f0e"
-        ), unsafe_allow_html=True)
-    
-    with col4:
-        ent_total = metrics.get('Fecha Entrega', {}).get('total', 0)
-        ent_clientes = metrics.get('Fecha Entrega', {}).get('clientes', 0)
-        st.markdown(get_metric_card_html(
-            "Fechas de Entrega", 
-            str(ent_total), 
-            f"{ent_clientes} clientes",
-            "#2ca02c"
-        ), unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # ========== SELECTOR Y GRÁFICO DE FECHAS DE ENTREGA ==========
-    analysis_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
-    st.subheader(f"Análisis de Fechas de Entrega por Mes{analysis_suffix}")
-    
-    # Selector de año, mes y actividad
-    col_year, col_month, col_activity = st.columns(3)
-    
-    with col_year:
-        year_options = [2024, 2025, 2026]
-        try:
-            default_year_index = year_options.index(datetime.now().year)
-        except ValueError:
-            default_year_index = len(year_options) - 1
-        chart_year = st.selectbox(
-            "Seleccionar Año:",
-            options=year_options,
-            index=default_year_index,
-            key="chart_year_selector"
-        )
-    
-    with col_month:
-        spanish_months = [
-            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-        ]
-        chart_month = st.selectbox(
-            "Seleccionar Mes:",
-            options=list(range(1, 13)),
-            format_func=lambda x: spanish_months[x - 1],
-            index=datetime.now().month - 1,  # Mes actual por defecto
-            key="chart_month_selector"
-        )
+            st.markdown(" ")
 
-    with col_activity:
-        activity_options = {
-            'Fechas de Entrega': 3,
-            'Fechas Envío OC': 1,
-            'Albaranados': 2,
-        }
-        activity_labels = list(activity_options.keys())
-        default_activity = 'Fechas de Entrega'
-        activity_label = st.selectbox(
-            "Seleccionar Actividad:",
-            options=activity_labels,
-            index=activity_labels.index(default_activity),
-            key="chart_activity_selector"
-        )
-        activity_id = activity_options[activity_label]
-    
-    chart_month_name = spanish_months[chart_month - 1]
-    
-    # Determinar si el mes seleccionado es pasado, presente o futuro
-    current_date = datetime.now()
-    selected_date = date(chart_year, chart_month, 1)
-    current_month_date = date(current_date.year, current_date.month, 1)
-    
-    country_text = f" ({dashboard_country_display})" if dashboard_country_display else ""
-    
-    if selected_date < current_month_date:
-        chart_subtitle = f"{activity_label} del mes vencido ({chart_month_name} {chart_year}){country_text}"
-    elif selected_date > current_month_date:
-        chart_subtitle = f"{activity_label} del mes próximo ({chart_month_name} {chart_year}){country_text}"
-    else:
-        chart_subtitle = f"{activity_label} del mes actual ({chart_month_name} {chart_year}){country_text}"
-    
-    st.subheader(chart_subtitle)
-    
-    # Obtener datos del mes seleccionado para la gráfica
-    monthly_data = get_monthly_activity_data(chart_year, chart_month, activity_id, dashboard_country_filter)
-    
-    if not monthly_data.empty:
-        total_delivery_month = monthly_data['cantidad_entregas'].sum()
-        country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-        st.info(f"**{total_delivery_month} {activity_label}** programadas en {chart_month_name} {chart_year}{country_info}")
-        
-        # Mostrar gráfico de línea del mes
-        line_chart = create_activity_line_chart(monthly_data, chart_month_name, activity_label)
-        st.plotly_chart(line_chart, use_container_width=True)
-        
-    else:
-        country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
-        st.success(f"No hay {activity_label} programadas para {chart_month_name} {chart_year}{country_info}")
-    
-    st.markdown("---")
+            chart_col_year, chart_col_month = st.columns([1, 1])
+            with chart_col_year:
+                year_options = [2024, 2025, 2026]
+                try:
+                    default_year_index = year_options.index(datetime.now().year)
+                except ValueError:
+                    default_year_index = len(year_options) - 1
+                chart_year = st.selectbox(
+                    "Seleccionar Año:",
+                    options=year_options,
+                    index=default_year_index,
+                    key="planning_chart_year_selector"
+                )
+
+            with chart_col_month:
+                chart_month = st.selectbox(
+                    "Seleccionar Mes:",
+                    options=list(range(1, 13)),
+                    format_func=lambda x: spanish_months[x - 1],
+                    index=datetime.now().month - 1,
+                    key="planning_chart_month_selector"
+                )
+
+            chart_month_name = spanish_months[chart_month - 1]
+            activity_id = planning_activity_options.get(planning_activity_label, 3)
+            monthly_data = get_monthly_activity_data(chart_year, chart_month, activity_id, dashboard_country_filter)
+
+            if not monthly_data.empty:
+                line_chart = create_activity_line_chart(monthly_data, chart_month_name, planning_activity_label)
+                st.plotly_chart(line_chart, use_container_width=True)
+            else:
+                country_info = f" en {dashboard_country_display}" if dashboard_country_display else ""
+                st.success(
+                    f"No hay {planning_activity_label.lower()} programadas para {chart_month_name} {chart_year}{country_info}"
+                )
+
+        st.markdown("---")
+
+        with indicators_container:
+            indicators_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
+            st.subheader(f"Indicadores{indicators_suffix}")
+
+            # Porcentaje de cumplimiento de agenda (valores por codigo)
+            agenda_compliance_general = 0
+            total_clients = get_total_clients_count(dashboard_country_filter)
+
+            metric_col1, metric_col2 = st.columns(2)
+            with metric_col1:
+                st.markdown(get_metric_card_html(
+                    "Cumplimiento de Agenda",
+                    f"{agenda_compliance_general}%",
+                    "",
+                    "#1f77b4"
+                ), unsafe_allow_html=True)
+
+            with metric_col2:
+                st.markdown(get_metric_card_html(
+                    "Clientes WE Calendarizdos",
+                    str(total_clients),
+                    "",
+                    "#9467bd"
+                ), unsafe_allow_html=True)
+
+            st.markdown(" ")
+
+            month_col, ticket_col = st.columns([1, 3])
+            with month_col:
+                indicator_month = st.selectbox(
+                    "Seleccionar Mes:",
+                    options=list(range(1, 13)),
+                    format_func=lambda x: spanish_months[x - 1],
+                    index=datetime.now().month - 1,
+                    key="indicator_month_selector"
+                )
+
+            with ticket_col:
+                week_labels = ["Semana 1", "Semana 2", "Semana 3", "Semana 4"]
+                expected_values = [20754255.97, 31086435.86, 29268031.52, 39230247.21]
+                actual_values = [6835024.82, 21739989.37, 0, 0]
+
+                weekly_accuracy = []
+                for expected, actual in zip(expected_values, actual_values):
+                    if expected <= 0:
+                        weekly_accuracy.append(0)
+                    else:
+                        diff_ratio = abs(expected - actual) / expected
+                        weekly_accuracy.append(max(0, min(100, (1 - diff_ratio) * 100)))
+
+                ticket_accuracy_global = round(sum(weekly_accuracy) / len(weekly_accuracy))
+                st.info(
+                    f"Ticket Promedio Global ({spanish_months[indicator_month - 1]}): **{ticket_accuracy_global}%**"
+                )
+
+            # Grafica de barras de accuracy de ticket promedio por semana (valores por codigo)
+            week_accuracy = [round(value) for value in weekly_accuracy]
+
+            bar_fig = go.Figure()
+            bar_fig.add_trace(go.Bar(
+                x=week_labels,
+                y=week_accuracy,
+                marker_color="#06038D",
+                text=[f"{value}%" for value in week_accuracy],
+                textposition="outside",
+                hovertemplate="%{x}<br>Accuracy: %{y}%<extra></extra>"
+            ))
+
+            bar_fig.update_layout(
+                title="Accuracy de Ticket Promedio por Semana",
+                xaxis_title="Semanas del mes",
+                yaxis_title="Accuracy (%)",
+                height=380,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family="Arial", size=12),
+                yaxis=dict(range=[0, 100], showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+            )
+
+            st.plotly_chart(bar_fig, use_container_width=True)
+
+            line_fig = go.Figure()
+            line_fig.add_trace(go.Scatter(
+                x=week_labels,
+                y=expected_values,
+                mode='lines+markers+text',
+                name='Esperada',
+                line=dict(color='#1f77b4', width=3),
+                marker=dict(size=8, color='#1f77b4'),
+                text=[f"${value:,.2f}" for value in expected_values],
+                textposition="top center",
+                hovertemplate="%{x}<br>Esperada: $%{y:,.2f}<extra></extra>"
+            ))
+            line_fig.add_trace(go.Scatter(
+                x=week_labels,
+                y=actual_values,
+                mode='lines+markers+text',
+                name='Real',
+                line=dict(color='#ff7f0e', width=3),
+                marker=dict(size=8, color='#ff7f0e'),
+                text=[f"${value:,.2f}" for value in actual_values],
+                textposition="top center",
+                hovertemplate="%{x}<br>Real: $%{y:,.2f}<extra></extra>"
+            ))
+
+            line_fig.update_layout(
+                title=f"Facturación Esperada vs Real {spanish_months[indicator_month - 1]}",
+                xaxis_title="Semanas del mes",
+                yaxis_title="Monto",
+                height=450,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family="Arial", size=12),
+                yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)', tickprefix="$", tickformat=",.0f")
+            )
+
+            st.plotly_chart(line_fig, use_container_width=True)
 
 def show_performance_dashboard():
     """Muestra un dashboard de rendimiento de la base de datos y cache"""
