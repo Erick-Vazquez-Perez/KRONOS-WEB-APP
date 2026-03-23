@@ -666,7 +666,7 @@ def show_dashboard():
             with ticket_col:
                 week_labels = ["Semana 1", "Semana 2", "Semana 3", "Semana 4"]
                 expected_values = [20754255.97, 31086435.86, 29268031.52, 39230247.21]
-                actual_values = [6835024.82, 21739989.37, 0, 0]
+                actual_values = [6835024.82, 21739989.37, 26,554,025.80, 0]
 
                 weekly_accuracy = []
                 for expected, actual in zip(expected_values, actual_values):
