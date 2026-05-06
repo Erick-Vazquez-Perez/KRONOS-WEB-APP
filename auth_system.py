@@ -395,9 +395,12 @@ class AuthSystem:
                 div[data-testid="stForm"] * { animation: none !important; transition: none !important; }
             }
 
-            /* Fondo degradado azul corporativo */
+            /* Fondo degradado azul a naranja original */
             div[data-testid="stAppViewContainer"] {
-                background: linear-gradient(135deg, #06038D 0%, #040269 100%) !important;
+                background:
+                    radial-gradient(1200px 700px at 15% 15%, rgba(255,255,255,0.18), rgba(255,255,255,0) 60%),
+                    radial-gradient(1200px 700px at 85% 25%, rgba(6,3,141,0.18), rgba(6,3,141,0) 55%),
+                    linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 45%, var(--werfen-orange) 115%) !important;
             }
 
             /* Card blanca centrada */
