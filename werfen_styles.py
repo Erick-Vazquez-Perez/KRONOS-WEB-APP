@@ -25,12 +25,21 @@ def get_custom_css():
     }
 
     /* ========== HEADER DE STREAMLIT: SIN FONDO, CONTENIDO FLOTANTE ========== */
-    /* Quitar el fondo y borde del header para que no ocupe espacio visual,
-       pero dejar visibles el spinner y los botones nativos como overlay */
     header[data-testid="stHeader"] {
         background: transparent !important;
         border-bottom: none !important;
         box-shadow: none !important;
+    }
+    /* Ocultar botones de Deploy, Share y similares */
+    header[data-testid="stHeader"] button[kind="header"],
+    header[data-testid="stHeader"] a[kind="header"],
+    [data-testid="stDeployButton"] {
+        display: none !important;
+    }
+    /* Re-mostrar únicamente los 3 botones de opciones del toolbar */
+    [data-testid="stToolbarActions"] button[kind="header"],
+    [data-testid="stToolbarActions"] a[kind="header"] {
+        display: inline-flex !important;
     }
     /* Subir el contenido eliminando el padding que Streamlit reserva para el header */
     .block-container,
