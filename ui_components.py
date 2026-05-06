@@ -128,147 +128,94 @@ def show_clients_gallery():
 
     st.session_state.setdefault("client_search", "")
 
-    def _clear_client_search():
-        """Reset de búsqueda de clientes"""
-        st.session_state["client_search"] = ""
-    
-    # Fila superior: búsqueda de texto
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
+    # ── Fila 1: búsqueda + botón limpiar ────────────────────────────────
+    col_search, col_clear = st.columns([5, 1])
+    with col_search:
         search_term = st.text_input(
-            "Buscar por nombre, código AG, CSR, vendedor, tipo o región:",
-            placeholder="Ingresa tu búsqueda...",
+            "Buscar cliente",
+            placeholder="Nombre, código AG, CSR, vendedor, tipo, región, estado o ciudad...",
             key="client_search",
-            help="Busca clientes por cualquiera de sus campos principales"
+            label_visibility="collapsed",
         )
-    
-    with col2:
-        # Botón para limpiar búsqueda
+    with col_clear:
         st.button(
-            "Limpiar",
-            key="clear_search",
-            help="Limpiar búsqueda",
-            on_click=_clear_client_search
-        )
-    
-    # Fila inferior: filtros adicionales
-    # Primera fila de filtros
-    row1_col1, row1_col2, row1_col3, row1_col4, row1_col5, row1_col6, _row1_spacer = st.columns([2, 2, 2, 2, 2, 2, 1])
-
-    with row1_col1:
-        csr_options = ['Todos'] + sorted([csr for csr in clients['csr'].dropna().unique() if csr])
-        selected_csr = st.selectbox(
-            "Filtrar por CSR:",
-            csr_options,
-            index=0,
-            key="csr_filter"
+            "Limpiar filtros",
+            key="clear_all_filters",
+            help="Restablecer todos los filtros",
+            on_click=_mark_filters_for_reset,
+            use_container_width=True,
         )
 
-    with row1_col2:
-        vendedor_options = ['Todos'] + sorted([vendedor for vendedor in clients['vendedor'].dropna().unique() if vendedor])
-        selected_vendedor = st.selectbox(
-            "Filtrar por Vendedor:",
-            vendedor_options,
-            index=0,
-            key="vendedor_filter"
-        )
+    # ── Fila 2: filtros principales ──────────────────────────────────────
+    fc1, fc2, fc3, fc4 = st.columns(4)
 
-    with row1_col3:
-        tipo_options = ['Todos'] + get_tipos_cliente()
-        selected_tipo = st.selectbox(
-            "Filtrar por Tipo:",
-            tipo_options,
-            index=0,
-            key="tipo_filter"
-        )
-
-    with row1_col4:
-        region_options = ['Todos'] + get_regiones()
-        selected_region = st.selectbox(
-            "Filtrar por Región:",
-            region_options,
-            index=0,
-            key="region_filter"
-        )
-
-    with row1_col5:
-        if 'calendario_sap' in clients.columns:
-            calendario_sap_values = (
-                clients['calendario_sap']
-                .fillna('')
-                .astype(str)
-                .map(lambda x: x.strip())
-            )
-            calendario_sap_options = ['Todos'] + sorted([v for v in calendario_sap_values.unique() if v])
-        else:
-            calendario_sap_options = ['Todos']
-
-        selected_calendario_sap = st.selectbox(
-            "Filtrar por Calendario SAP:",
-            calendario_sap_options,
-            index=0,
-            key="calendario_sap_filter"
-        )
-
-    with row1_col6:
+    with fc1:
         pais_options = ['Todos'] + get_paises()
         if has_country_filter():
             country_filter = get_user_country_filter()
             selected_pais = st.selectbox(
-                "Filtrar por País:",
+                "País",
                 [country_filter],
                 index=0,
                 key="pais_filter",
                 disabled=True,
-                help=f"Tu usuario solo tiene acceso a clientes de {country_filter}"
+                help=f"Tu usuario solo tiene acceso a clientes de {country_filter}",
             )
         else:
-            selected_pais = st.selectbox(
-                "Filtrar por País:",
-                pais_options,
-                index=0,
-                key="pais_filter"
+            selected_pais = st.selectbox("País", pais_options, index=0, key="pais_filter")
+
+    with fc2:
+        tipo_options = ['Todos'] + get_tipos_cliente()
+        selected_tipo = st.selectbox("Tipo de cliente", tipo_options, index=0, key="tipo_filter")
+
+    with fc3:
+        csr_options = ['Todos'] + sorted([c for c in clients['csr'].dropna().unique() if c])
+        selected_csr = st.selectbox("CSR", csr_options, index=0, key="csr_filter")
+
+    with fc4:
+        vendedor_options = ['Todos'] + sorted([v for v in clients['vendedor'].dropna().unique() if v])
+        selected_vendedor = st.selectbox("Vendedor", vendedor_options, index=0, key="vendedor_filter")
+
+    # ── Filtros adicionales (expandible) ─────────────────────────────────
+    secondary_active = any([
+        st.session_state.get("region_filter", "Todos") != "Todos",
+        st.session_state.get("calendario_sap_filter", "Todos") != "Todos",
+        st.session_state.get("estado_filter", "Todos") != "Todos",
+        st.session_state.get("ciudad_filter", "Todos") != "Todos",
+        st.session_state.get("sort_filter", "Nombre A-Z") != "Nombre A-Z",
+    ])
+    with st.expander("Filtros adicionales", expanded=secondary_active):
+        ex1, ex2, ex3, ex4, ex5 = st.columns(5)
+
+        with ex1:
+            region_options = ['Todos'] + get_regiones()
+            selected_region = st.selectbox("Región", region_options, index=0, key="region_filter")
+
+        with ex2:
+            if 'calendario_sap' in clients.columns:
+                cal_vals = clients['calendario_sap'].fillna('').astype(str).map(str.strip)
+                calendario_sap_options = ['Todos'] + sorted([v for v in cal_vals.unique() if v])
+            else:
+                calendario_sap_options = ['Todos']
+            selected_calendario_sap = st.selectbox(
+                "Calendario SAP", calendario_sap_options, index=0, key="calendario_sap_filter"
             )
 
-    # Segunda fila de filtros
-    row2_col1, row2_col2, row2_col3, row2_col4, row2_col5 = st.columns([2, 2, 2, 2, 1])
+        with ex3:
+            estado_options = ['Todos'] + sorted(
+                [e for e in clients.get('estado', pd.Series()).fillna('').astype(str).unique() if e]
+            )
+            selected_estado = st.selectbox("Estado", estado_options, index=0, key="estado_filter")
 
-    with row2_col1:
-        estado_options = ['Todos'] + sorted([e for e in clients.get('estado', pd.Series()).fillna('').astype(str).unique() if e])
-        selected_estado = st.selectbox(
-            "Filtrar por Estado:",
-            estado_options,
-            index=0,
-            key="estado_filter"
-        )
+        with ex4:
+            ciudad_options = ['Todos'] + sorted(
+                [c for c in clients.get('ciudad', pd.Series()).fillna('').astype(str).unique() if c]
+            )
+            selected_ciudad = st.selectbox("Ciudad", ciudad_options, index=0, key="ciudad_filter")
 
-    with row2_col2:
-        ciudad_options = ['Todos'] + sorted([c for c in clients.get('ciudad', pd.Series()).fillna('').astype(str).unique() if c])
-        selected_ciudad = st.selectbox(
-            "Filtrar por Ciudad:",
-            ciudad_options,
-            index=0,
-            key="ciudad_filter"
-        )
-
-    with row2_col3:
-        sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región', 'País']
-        sort_by = st.selectbox(
-            "Ordenar por:",
-            sort_options,
-            index=0,
-            key="sort_filter"
-        )
-
-    with row2_col5:
-        st.write("")
-        st.button(
-            "Limpiar Filtros",
-            key="clear_all_filters",
-            help="Limpiar todos los filtros",
-            on_click=_mark_filters_for_reset
-        )
+        with ex5:
+            sort_options = ['Nombre A-Z', 'Nombre Z-A', 'Código AG', 'CSR', 'Vendedor', 'Tipo', 'Región', 'País']
+            sort_by = st.selectbox("Ordenar por", sort_options, index=0, key="sort_filter")
 
 
     
@@ -396,44 +343,45 @@ def show_clients_gallery():
             st.caption(f"Filtros activos: {' | '.join(active_filters)}")
     
     clients_to_show = filtered_clients
-    
-    # Selector de vista + año (para preview)
-    col1, col2, _spacer = st.columns([1, 1, 2])
-    with col1:
+
+    st.divider()
+
+    # ── Controles de vista ───────────────────────────────────────────────
+    vc1, vc2, vc3 = st.columns([1, 1, 3])
+    with vc1:
         view_options = ["Galería", "Lista", "Mapa"]
         default_view_mode = st.session_state.get("view_mode", "Galería")
         if default_view_mode not in view_options:
             default_view_mode = "Galería"
         view_mode = st.selectbox(
-            "Vista:",
+            "Vista",
             view_options,
             index=view_options.index(default_view_mode),
             key="view_mode",
-            help="Selecciona cómo mostrar los clientes"
+            help="Selecciona cómo mostrar los clientes",
         )
-    with col2:
+    with vc2:
         current_year = datetime.now().year
         year_options = list(range(current_year - 2, current_year + 6))
-        # Garantizar coherencia del estado antes de renderizar el widget para evitar advertencias
         if "preview_year" not in st.session_state:
             st.session_state["preview_year"] = current_year
         if st.session_state["preview_year"] not in year_options:
             st.session_state["preview_year"] = current_year
-
         preview_year = st.selectbox(
-            "Año:",
+            "Año",
             year_options,
             key="preview_year",
-            help="Año usado para el preview de fechas por cliente"
+            help="Año usado para el preview de fechas por cliente",
         )
-    
-    # Mostrar nombre del mes actual debajo del selector de vista
-    months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-    current_month_name = months[datetime.now().month - 1]
-    st.markdown(f"#### Mostrando fechas de {current_month_name} {preview_year}")
-    
-    st.divider()
+    with vc3:
+        months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        current_month_name = months[datetime.now().month - 1]
+        st.markdown(
+            f"<div style='padding-top:28px;color:#6b7280;font-size:0.88rem;'>"
+            f"Fechas de <strong style='color:#06038D;'>{current_month_name} {preview_year}</strong></div>",
+            unsafe_allow_html=True,
+        )
 
     # Mostrar clientes según la vista seleccionada
     if view_mode == "Lista":
