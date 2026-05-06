@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(python -c \"import werfen_styles; print\\('werfen_styles OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('auth_system.py'\\).read\\(\\)\\); print\\('auth_system.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('dashboard_components.py'\\).read\\(\\)\\); print\\('dashboard_components.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('auth_system.py', encoding='utf-8'\\).read\\(\\)\\); print\\('auth_system.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('dashboard_components.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard_components.py OK'\\)\")",
+      "Bash(python *)"
+    ]
+  }
+}

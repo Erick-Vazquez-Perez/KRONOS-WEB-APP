@@ -381,55 +381,100 @@ class AuthSystem:
             <style>
             header[data-testid="stHeader"],
             footer { display: none !important; }
-            .main .block-container { padding-top: 2.25rem !important; padding-bottom: 2.25rem !important; max-width: 1100px !important; }
-            @keyframes gl-fade-in { 0% { opacity: 0; transform: translateY(14px); filter: blur(2px);} 100% { opacity: 1; transform: translateY(0); filter: blur(0);} }
-            @media (prefers-reduced-motion: reduce) { div[data-testid="stForm"], div[data-testid="stForm"] * { animation: none !important; transition: none !important; } }
+            .main .block-container {
+                padding-top: 2rem !important;
+                padding-bottom: 2rem !important;
+                max-width: 1100px !important;
+            }
+            @keyframes gl-fade-in {
+                0%   { opacity: 0; transform: translateY(12px); }
+                100% { opacity: 1; transform: translateY(0);    }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                div[data-testid="stForm"],
+                div[data-testid="stForm"] * { animation: none !important; transition: none !important; }
+            }
+
+            /* Fondo degradado azul corporativo */
             div[data-testid="stAppViewContainer"] {
-                background:
-                    radial-gradient(1200px 700px at 15% 15%, rgba(255,255,255,0.18), rgba(255,255,255,0) 60%),
-                    radial-gradient(1200px 700px at 85% 25%, rgba(6,3,141,0.18), rgba(6,3,141,0) 55%),
-                    linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 45%, var(--werfen-orange) 115%) !important;
+                background: linear-gradient(135deg, #06038D 0%, #040269 100%) !important;
             }
+
+            /* Card blanca centrada */
             div[data-testid="stForm"] {
-                background: var(--werfen-gray) !important;
-                border: 1px solid var(--werfen-gray-dark) !important;
-                border-radius: 18px !important;
-                padding: 1.25rem 1.25rem 1rem 1.25rem !important;
-                box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14) !important;
-                position: relative;
-                overflow: hidden;
-                animation: gl-fade-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
-            }
-            div[data-testid="stForm"] .stTextInput > div > div > input {
+                background: #ffffff !important;
+                border: none !important;
                 border-radius: 12px !important;
-                border: 2px solid rgba(6, 3, 141, 0.16) !important;
-                padding: 0.7rem 0.9rem !important;
+                padding: 2rem 1.75rem 1.75rem !important;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.28) !important;
+                animation: gl-fade-in 480ms cubic-bezier(0.22,1,0.36,1) both;
+            }
+
+            /* Inputs */
+            div[data-testid="stForm"] .stTextInput > div > div > input {
+                border-radius: 8px !important;
+                border: 1px solid #d1d5db !important;
+                padding: 0.65rem 0.9rem !important;
                 font-size: 14px !important;
-                background: rgba(255, 255, 255, 0.95) !important;
+                background: #ffffff !important;
+                transition: border-color 0.2s ease, box-shadow 0.2s ease;
             }
             div[data-testid="stForm"] .stTextInput > div > div > input:focus {
-                border-color: var(--werfen-blue) !important;
-                box-shadow: 0 0 0 3px rgba(6, 3, 141, 0.12) !important;
+                border-color: #06038D !important;
+                box-shadow: 0 0 0 3px rgba(6,3,141,0.12) !important;
             }
-            div[data-testid="stForm"] .stButton > button[kind="primary"],
-            div[data-testid="stForm"] .stButton > button[data-testid="baseButton-primary"] {
-                background: linear-gradient(90deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 55%, var(--werfen-orange) 135%) !important;
-                border-color: transparent !important;
+            div[data-testid="stForm"] label {
+                color: #374151 !important;
+                font-weight: 600 !important;
+                font-size: 13px !important;
+            }
+
+            /* Botón Acceder */
+            div[data-testid="stForm"] .stButton > button,
+            div[data-testid="stForm"] .stButton > button[kind="primary"] {
+                background: #06038D !important;
                 color: white !important;
-                border-radius: 12px !important;
+                border: none !important;
+                border-radius: 8px !important;
                 min-height: 46px !important;
-                box-shadow: 0 10px 20px rgba(6, 3, 141, 0.18) !important;
+                font-weight: 700 !important;
+                font-size: 15px !important;
+                box-shadow: 0 4px 14px rgba(6,3,141,0.3) !important;
+                transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease !important;
             }
-            div[data-testid="stForm"] .stButton > button[kind="primary"]:hover,
-            div[data-testid="stForm"] .stButton > button[data-testid="baseButton-primary"]:hover {
-                filter: brightness(1.02);
-                transform: translateY(-1px);
-                box-shadow: 0 14px 26px rgba(6, 3, 141, 0.22) !important;
+            div[data-testid="stForm"] .stButton > button:hover {
+                background: #1a17a3 !important;
+                box-shadow: 0 6px 20px rgba(6,3,141,0.38) !important;
+                transform: translateY(-1px) !important;
             }
-            .gl-login-title { text-align: center; margin: 0.25rem 0 0.15rem 0; font-weight: 800; letter-spacing: 0.2px; color: var(--werfen-blue); font-size: 1.55rem; animation: gl-fade-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 120ms; }
-            .gl-login-subtitle { text-align: center; margin: 0 0 1.1rem 0; color: rgba(0, 0, 0, 0.62); font-size: 0.95rem; animation: gl-fade-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 170ms; }
-            .gl-login-logo { display: block; margin: 0.9rem auto 0.4rem auto; width: 50%; height: auto; animation: gl-fade-in 720ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 60ms; }
-            div[data-testid="stForm"] label, div[data-testid="stForm"] .stTextInput, div[data-testid="stForm"] .stButton { animation: gl-fade-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+            /* Títulos dentro del formulario */
+            .gl-login-title {
+                text-align: center;
+                margin: 0.2rem 0 0.1rem;
+                font-weight: 800;
+                letter-spacing: 0.2px;
+                color: #06038D;
+                font-size: 1.5rem;
+                animation: gl-fade-in 580ms cubic-bezier(0.22,1,0.36,1) both;
+                animation-delay: 100ms;
+            }
+            .gl-login-subtitle {
+                text-align: center;
+                margin: 0 0 1.25rem;
+                color: #6b7280;
+                font-size: 0.9rem;
+                animation: gl-fade-in 580ms cubic-bezier(0.22,1,0.36,1) both;
+                animation-delay: 150ms;
+            }
+            .gl-login-logo {
+                display: block;
+                margin: 0.75rem auto 0.35rem;
+                width: 48%;
+                height: auto;
+                animation: gl-fade-in 660ms cubic-bezier(0.22,1,0.36,1) both;
+                animation-delay: 40ms;
+            }
             </style>
             """,
             unsafe_allow_html=True,
@@ -446,7 +491,7 @@ class AuthSystem:
                     )
 
                 st.markdown('<h1 class="gl-login-title">Green Logistics</h1>', unsafe_allow_html=True)
-                st.markdown('<p class="gl-login-subtitle">Sistema de calendarización</p>', unsafe_allow_html=True)
+                st.markdown('<p class="gl-login-subtitle">Sistema de Gestión de Calendarios</p>', unsafe_allow_html=True)
 
                 username = st.text_input(
                     "Usuario",

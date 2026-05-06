@@ -394,11 +394,11 @@ def create_activity_line_chart(monthly_data, selected_month_name, activity_label
         y=monthly_data['cantidad_entregas'],
         mode='lines+markers',
         name=f'Fechas {activity_label}',
-        line=dict(color='#2ca02c', width=3),
-        marker=dict(size=8, color='#2ca02c'),
+        line=dict(color='#06038D', width=3),
+        marker=dict(size=8, color='#06038D'),
         hovertemplate=f'<b>Día %{{x}}</b><br>{activity_label}: %{{y}}<extra></extra>'
     ))
-    
+
     # Área bajo la curva
     fig.add_trace(go.Scatter(
         x=monthly_data['day'],
@@ -406,7 +406,7 @@ def create_activity_line_chart(monthly_data, selected_month_name, activity_label
         fill='tozeroy',
         mode='none',
         name='Área',
-        fillcolor='rgba(44, 160, 44, 0.1)',
+        fillcolor='rgba(6,3,141,0.07)',
         showlegend=False
     ))
     
@@ -437,8 +437,12 @@ def create_activity_line_chart(monthly_data, selected_month_name, activity_label
 
 def show_dashboard():
     """Función principal del dashboard"""
-    st.header("Dashboard Green Logistics")
-    st.markdown("*Vista general de las actividades y fechas programadas*")
+    st.markdown(
+        '<h2 style="color:#06038D;border-bottom:2px solid #E87721;padding-bottom:6px;margin-bottom:4px;">'
+        'Dashboard Green Logistics</h2>'
+        '<p style="color:#6b7280;font-size:0.9rem;margin-top:0;">Vista general de las actividades y fechas programadas</p>',
+        unsafe_allow_html=True,
+    )
     
     # ========== SELECTOR DE PAÍS PARA ADMINISTRADORES ==========
     
@@ -519,7 +523,11 @@ def show_dashboard():
 
         with planning_container:
             planning_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
-            st.subheader(f"Planeación{planning_suffix}")
+            st.markdown(
+                f'<h3 style="color:#06038D;border-bottom:2px solid #E87721;padding-bottom:4px;'
+                f'font-size:1.15rem;margin-bottom:12px;">Planeación{planning_suffix}</h3>',
+                unsafe_allow_html=True,
+            )
 
             filter_col, selector_col, _spacer = st.columns([1, 1, 6])
             with filter_col:
@@ -628,7 +636,11 @@ def show_dashboard():
 
         with indicators_container:
             indicators_suffix = f" - {dashboard_country_display}" if dashboard_country_display else ""
-            st.subheader(f"Indicadores{indicators_suffix}")
+            st.markdown(
+                f'<h3 style="color:#06038D;border-bottom:2px solid #E87721;padding-bottom:4px;'
+                f'font-size:1.15rem;margin-bottom:12px;">Indicadores{indicators_suffix}</h3>',
+                unsafe_allow_html=True,
+            )
 
             # Porcentaje de cumplimiento de agenda (valores por codigo)
             agenda_compliance_general = 0
@@ -713,8 +725,8 @@ def show_dashboard():
                 y=expected_values,
                 mode='lines+markers+text',
                 name='Esperada',
-                line=dict(color='#1f77b4', width=3),
-                marker=dict(size=8, color='#1f77b4'),
+                line=dict(color='#06038D', width=3),
+                marker=dict(size=8, color='#06038D'),
                 text=[f"${value:,.2f}" for value in expected_values],
                 textposition="top center",
                 hovertemplate="%{x}<br>Esperada: $%{y:,.2f}<extra></extra>"
@@ -724,8 +736,8 @@ def show_dashboard():
                 y=actual_values,
                 mode='lines+markers+text',
                 name='Real',
-                line=dict(color='#ff7f0e', width=3),
-                marker=dict(size=8, color='#ff7f0e'),
+                line=dict(color='#E87721', width=3),
+                marker=dict(size=8, color='#E87721'),
                 text=[f"${value:,.2f}" for value in actual_values],
                 textposition="top center",
                 hovertemplate="%{x}<br>Real: $%{y:,.2f}<extra></extra>"

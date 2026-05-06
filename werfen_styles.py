@@ -18,65 +18,92 @@ def get_custom_css():
         --werfen-gray: #f5f5f5;
         --werfen-gray-dark: #e0e0e0;
         --werfen-white: #ffffff;
+        --werfen-text-gray: #6b7280;
+        --card-shadow: 0 2px 8px rgba(6,3,141,0.10);
+        --card-shadow-hover: 0 6px 18px rgba(6,3,141,0.18);
+        --border-radius: 8px;
     }
 
-    /* ========== OCULTAR ELEMENTOS DEL HEADER DE STREAMLIT ========== */
-    /* Ocultar botones de Deploy y menú de opciones, pero mantener el botón de sidebar */
-    header[data-testid="stHeader"] button[kind="header"] {
-        display: none !important;
+    /* ========== HEADER DE STREAMLIT: SIN FONDO, CONTENIDO FLOTANTE ========== */
+    /* Quitar el fondo y borde del header para que no ocupe espacio visual,
+       pero dejar visibles el spinner y los botones nativos como overlay */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        border-bottom: none !important;
+        box-shadow: none !important;
     }
-    
-    header[data-testid="stHeader"] > div > div:nth-child(2) {
-        display: none !important;
+    /* Subir el contenido eliminando el padding que Streamlit reserva para el header */
+    .block-container,
+    div[data-testid="block-container"],
+    section[data-testid="stMain"] .block-container,
+    div[data-testid="stAppViewContainer"] section[data-testid="stMain"] > div > div {
+        padding-top: 1rem !important;
+        margin-top: 0 !important;
     }
 
-    /* ========== ESTILOS BÁSICOS DE BOTONES ========== */
-    /* Botones básicos con colores Werfen - Especificidad alta */
+    /* ========== SIDEBAR — ESTILOS PREDETERMINADOS DE STREAMLIT ========== */
+    /* Separador en sidebar */
+    div[data-testid="stSidebar"] hr {
+        margin: 14px 0 !important;
+        border: none !important;
+        border-top: 1px solid var(--werfen-gray-dark) !important;
+        background: none !important;
+        height: 1px !important;
+    }
+
+    /* Títulos h3 dentro del sidebar */
+    div[data-testid="stSidebar"] h3 {
+        color: var(--werfen-blue) !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        margin: 14px 0 6px 0 !important;
+    }
+
+    /* Botones del sidebar con acento azul Werfen */
+    div[data-testid="stSidebar"] .stButton > button {
+        border-radius: var(--border-radius) !important;
+    }
+
+    /* Espaciado de botones global */
+    .stButton {
+        margin: 0.2rem 0 !important;
+    }
+
+    /* ========== BOTONES PRINCIPALES (área de contenido) ========== */
     .stApp .stButton > button,
     div[data-testid="stAppViewContainer"] .stButton > button {
         background: var(--werfen-blue) !important;
         color: white !important;
         border: 2px solid var(--werfen-blue) !important;
-        border-radius: 8px !important;
-        padding: 0.6rem 1.2rem !important;
+        border-radius: var(--border-radius) !important;
+        padding: 0.5rem 1.2rem !important;
         font-weight: 600 !important;
         font-size: 14px !important;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         cursor: pointer !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 2px 4px rgba(6, 3, 141, 0.2) !important;
-        min-height: 42px !important;
+        transition: all 0.2s ease !important;
+        box-shadow: var(--card-shadow) !important;
+        min-height: 40px !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        text-decoration: none !important;
         line-height: 1.2 !important;
     }
-    
     .stApp .stButton > button:hover,
     div[data-testid="stAppViewContainer"] .stButton > button:hover {
         background: white !important;
         color: var(--werfen-blue) !important;
         border-color: var(--werfen-blue) !important;
         transform: translateY(-1px) !important;
-        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(6,3,141,0.2) !important;
     }
-    
     .stApp .stButton > button:active,
     div[data-testid="stAppViewContainer"] .stButton > button:active {
         background: var(--werfen-blue-dark) !important;
         color: white !important;
-        border-color: var(--werfen-blue-dark) !important;
-        transform: translateY(0px) !important;
-        box-shadow: 0 1px 2px rgba(6, 3, 141, 0.2) !important;
+        transform: translateY(0) !important;
+        box-shadow: var(--card-shadow) !important;
     }
-    
-    .stApp .stButton > button:focus,
-    div[data-testid="stAppViewContainer"] .stButton > button:focus {
-        outline: 2px solid rgba(6, 3, 141, 0.3) !important;
-        outline-offset: 2px !important;
-    }
-    
     .stApp .stButton > button:disabled,
     div[data-testid="stAppViewContainer"] .stButton > button:disabled {
         background: #e0e0e0 !important;
@@ -85,474 +112,314 @@ def get_custom_css():
         cursor: not-allowed !important;
         transform: none !important;
         box-shadow: none !important;
-        opacity: 0.6 !important;
+        opacity: 0.7 !important;
     }
-    /* ========== ESTILOS PARA BOTONES ESPECÍFICOS ========== */
-    /* Botones de tipo "primary" - Mantener el estilo azul → blanco */
-    .stApp .stButton > button[kind="primary"],
-    .stApp .stButton > button[data-testid="baseButton-primary"] {
-        background: var(--werfen-blue) !important;
-        color: white !important;
-        border-color: var(--werfen-blue) !important;
-    }
-    
-    .stApp .stButton > button[kind="primary"]:hover,
-    .stApp .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: white !important;
-        color: var(--werfen-blue) !important;
-        border-color: var(--werfen-blue) !important;
-    }
-    
-    /* Botones de tipo "secondary" - Mantener el estilo azul → blanco */
-    .stApp .stButton > button[kind="secondary"],
-    .stApp .stButton > button[data-testid="baseButton-secondary"] {
-        background: var(--werfen-blue) !important;
-        color: white !important;
-        border: 2px solid var(--werfen-blue) !important;
-    }
-    
-    .stApp .stButton > button[kind="secondary"]:hover,
-    .stApp .stButton > button[data-testid="baseButton-secondary"]:hover {
-        background: white !important;
-        color: var(--werfen-blue) !important;
-    }
-    
-    /* Estilos de espaciado para contenedores de botones */
-    .stButton {
-        margin: 0.25rem 0 !important;
-    }
-    
+
     /* Botones en columnas */
     div[data-testid="column"] .stButton > button {
         width: 100% !important;
     }
-    
-    /* ========== HEADER Y NAVEGACIÓN ========== */
-    .main-header {
-        background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 6px rgba(6, 3, 141, 0.1);
-    }
-
-    .main-header h1 {
-        margin: 0;
-        font-size: 2.5rem;
-        font-weight: 700;
-        text-align: center;
-    }
-
-    /* ========== SIDEBAR ========== */
-    .css-1d391kg {
-        background-color: var(--werfen-gray);
-        border-right: 3px solid var(--werfen-blue);
-    }
-
-    /* Espaciado mejorado en sidebar */
-    div[data-testid="stSidebar"] hr {
-        margin: 25px 0 !important;
-        border: 1px solid var(--werfen-orange) !important;
-        border-radius: 2px !important;
-        background: linear-gradient(90deg, var(--werfen-blue) 0%, var(--werfen-orange) 100%) !important;
-        height: 2px !important;
-    }
-    
-    /* Títulos de sección personalizados en sidebar */
-    div[data-testid="stSidebar"] h3 {
-        color: var(--werfen-blue) !important;
-        font-weight: 800 !important;
-        margin: 25px 0 20px 0 !important;
-        font-size: 18px !important;
-        text-transform: uppercase !important;
-        letter-spacing: 1px !important;
-        text-align: center !important;
-        padding: 10px 0 !important;
-        border-bottom: 2px solid var(--werfen-orange) !important;
-        background: linear-gradient(135deg, var(--werfen-gray) 0%, var(--werfen-white) 100%) !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Estilo para contenedores de botones en sidebar */
-    .stButton {
-        margin-bottom: 12px !important;
-    }
 
     /* ========== TARJETAS DE CLIENTE ========== */
     .client-card {
-        border: 2px solid var(--werfen-gray-dark);
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        background: linear-gradient(135deg, white 0%, var(--werfen-gray) 100%);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: all 0.3s ease;
+        background: var(--werfen-white);
+        border: 1px solid #e8e8f0;
+        border-top: 3px solid var(--werfen-blue);
+        border-radius: var(--border-radius);
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 0.75rem;
+        box-shadow: var(--card-shadow);
+        transition: box-shadow 0.22s ease, border-top-color 0.22s ease;
         position: relative;
-        overflow: hidden;
-    }
-
-    .client-card:before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, var(--werfen-blue) 0%, var(--werfen-orange) 100%);
     }
 
     .client-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
-        border-color: var(--werfen-blue);
+        box-shadow: 0 4px 12px rgba(6,3,141,0.12);
+        border-top-color: var(--werfen-orange);
     }
 
     .client-card h4 {
         color: var(--werfen-blue);
-        margin: 0 0 0.8rem 0;
-        font-size: 1.3rem;
+        margin: 0 0 0.6rem 0;
+        font-size: 1rem;
         font-weight: 700;
     }
 
     .client-card p {
-        margin: 0.3rem 0;
-        font-size: 0.9rem;
-        color: #333;
+        margin: 0.15rem 0;
+        font-size: 0.82rem;
+        color: var(--werfen-text-gray);
     }
 
     .client-card strong {
-        color: var(--werfen-blue);
+        color: #374151;
         font-weight: 600;
     }
 
-    /* ========== FILTROS Y SELECTORES ========== */
-    .stSelectbox > div > div {
-        border: 2px solid var(--werfen-gray-dark);
-        border-radius: 8px;
-        transition: border-color 0.3s ease;
+    /* ========== BADGES / PILLS ========== */
+    .werfen-badge {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
     }
-
-    .stSelectbox > div > div:focus-within {
-        border-color: var(--werfen-blue);
-        box-shadow: 0 0 0 2px rgba(6, 3, 141, 0.1);
-    }
-
-    .stTextInput > div > div > input {
-        border: 2px solid var(--werfen-gray-dark);
-        border-radius: 8px;
-        transition: border-color 0.3s ease;
-    }
-
-    .stTextInput > div > div > input:focus {
-        border-color: var(--werfen-blue);
-        box-shadow: 0 0 0 2px rgba(6, 3, 141, 0.1);
-    }
-
-    /* ========== MÉTRICAS Y ESTADÍSTICAS ========== */
-    .metric-card {
-        background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
+    .werfen-badge-orange {
+        background: var(--werfen-orange);
         color: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(6, 3, 141, 0.2);
-        margin-bottom: 1rem;
+    }
+    .werfen-badge-blue {
+        background: rgba(6,3,141,0.1);
+        color: var(--werfen-blue);
+    }
+    .werfen-badge-gray {
+        background: #e8e8f0;
+        color: #374151;
     }
 
-    .metric-card h3 {
-        margin: 0;
-        font-size: 2rem;
-        font-weight: 700;
+    /* ========== FILTROS Y SELECTORES (área de contenido) ========== */
+    .stApp .stSelectbox > div > div {
+        border: 1px solid var(--werfen-gray-dark);
+        border-radius: var(--border-radius);
+        transition: border-color 0.2s ease;
     }
-
-    .metric-card p {
-        margin: 0.5rem 0 0 0;
-        font-size: 0.9rem;
-        opacity: 0.9;
+    .stApp .stSelectbox > div > div:focus-within {
+        border-color: var(--werfen-blue) !important;
+        box-shadow: 0 0 0 2px rgba(6,3,141,0.1) !important;
     }
-
-    /* ========== ESTILIZADO DE MÉTRICAS NATIVAS DE STREAMLIT ========== */
-    div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, white 0%, var(--werfen-gray) 100%);
-        border: 2px solid var(--werfen-gray-dark);
-        border-left: 4px solid var(--werfen-blue);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    .stApp .stTextInput > div > div > input {
+        border: 1px solid var(--werfen-gray-dark);
+        border-radius: var(--border-radius);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
-
-    div[data-testid="metric-container"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(6, 3, 141, 0.15);
-        border-left-color: var(--werfen-orange);
+    .stApp .stTextInput > div > div > input:focus {
+        border-color: var(--werfen-blue) !important;
+        box-shadow: 0 0 0 2px rgba(6,3,141,0.1) !important;
     }
-
-    div[data-testid="metric-container"] > div {
+    .stApp .stMultiSelect > div > div {
+        border: 1px solid var(--werfen-gray-dark);
+        border-radius: var(--border-radius);
+    }
+    .stApp .stMultiSelect > div > div:focus-within {
+        border-color: var(--werfen-blue) !important;
+        box-shadow: 0 0 0 2px rgba(6,3,141,0.1) !important;
+    }
+    .stApp .stMultiSelect span[data-baseweb="tag"] {
+        background: rgba(6,3,141,0.1) !important;
         color: var(--werfen-blue) !important;
+        border-radius: 4px !important;
     }
 
+    /* ========== MÉTRICAS NATIVAS DE STREAMLIT ========== */
+    div[data-testid="metric-container"] {
+        background: var(--werfen-white);
+        border: 1px solid #e8e8f0;
+        border-radius: var(--border-radius);
+        padding: 1.1rem 1.25rem 1rem;
+        margin-bottom: 0.75rem;
+        box-shadow: var(--card-shadow);
+        position: relative;
+        overflow: hidden;
+        transition: box-shadow 0.22s ease;
+    }
+    div[data-testid="metric-container"]::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: var(--werfen-orange);
+    }
+    div[data-testid="metric-container"]:hover {
+        box-shadow: var(--card-shadow-hover);
+    }
     div[data-testid="metric-container"] > div > div[data-testid="metric-label"] {
-        font-size: 0.9rem !important;
-        color: #666 !important;
+        font-size: 0.78rem !important;
+        color: var(--werfen-text-gray) !important;
         font-weight: 600 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.5px !important;
-        margin-bottom: 0.5rem !important;
     }
-
     div[data-testid="metric-container"] > div > div[data-testid="metric-value"] {
-        font-size: 2.5rem !important;
+        font-size: 2.2rem !important;
         font-weight: 700 !important;
         color: var(--werfen-blue) !important;
-        line-height: 1 !important;
+        line-height: 1.1 !important;
     }
-
-    div[data-testid="metric-container"] > div > div[data-testid="metric-delta"] {
-        font-size: 0.8rem !important;
-        font-weight: 600 !important;
-        padding: 0.2rem 0.5rem !important;
-        border-radius: 20px !important;
-        margin-top: 0.5rem !important;
-    }
-
     div[data-testid="metric-container"] > div > div[data-testid="metric-delta"][data-state="positive"] {
-        background-color: rgba(46, 125, 50, 0.1) !important;
+        background-color: rgba(46,125,50,0.1) !important;
         color: #2e7d32 !important;
+        border-radius: 4px !important;
+        padding: 2px 6px !important;
     }
-
     div[data-testid="metric-container"] > div > div[data-testid="metric-delta"][data-state="negative"] {
-        background-color: rgba(211, 47, 47, 0.1) !important;
+        background-color: rgba(211,47,47,0.1) !important;
         color: #d32f2f !important;
+        border-radius: 4px !important;
+        padding: 2px 6px !important;
     }
 
     /* ========== MÉTRICAS WERFEN PERSONALIZADAS ========== */
     .werfen-metric {
-        background: linear-gradient(135deg, white 0%, var(--werfen-gray) 100%);
-        border: 2px solid var(--werfen-gray-dark);
-        border-left: 4px solid var(--werfen-blue);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        transition: all 0.3s ease;
+        background: var(--werfen-white);
+        border: 1px solid #e8e8f0;
+        border-radius: var(--border-radius);
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 0.75rem;
+        box-shadow: var(--card-shadow);
         position: relative;
+        overflow: hidden;
+        transition: box-shadow 0.22s ease;
     }
-
+    .werfen-metric::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: var(--werfen-orange);
+    }
     .werfen-metric:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(6, 3, 141, 0.15);
-        border-left-color: var(--werfen-orange);
+        box-shadow: var(--card-shadow-hover);
     }
-
     .werfen-metric .metric-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.5rem;
     }
-
     .werfen-metric .metric-label {
-        font-size: 0.9rem;
-        color: #666;
+        font-size: 0.78rem;
+        color: var(--werfen-text-gray);
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
-
     .werfen-metric .metric-value {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 700;
         color: var(--werfen-blue);
-        line-height: 1;
+        line-height: 1.1;
+        margin-top: 0.35rem;
     }
-
     .werfen-metric .metric-delta {
-        font-size: 0.8rem;
+        font-size: 0.76rem;
         font-weight: 600;
-        padding: 0.2rem 0.5rem;
+        padding: 2px 8px;
         border-radius: 20px;
-        margin-top: 0.5rem;
+        margin-top: 0.35rem;
+        display: inline-block;
     }
-
     .werfen-metric .metric-delta.positive {
-        background-color: rgba(46, 125, 50, 0.1);
+        background-color: rgba(46,125,50,0.1);
         color: #2e7d32;
     }
-
     .werfen-metric .metric-delta.negative {
-        background-color: rgba(211, 47, 47, 0.1);
+        background-color: rgba(211,47,47,0.1);
         color: #d32f2f;
     }
-
     .werfen-metric .metric-help {
-        background-color: var(--werfen-gray);
+        width: 18px; height: 18px;
         border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.8rem;
-        color: #666;
+        background: var(--werfen-gray);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.74rem;
+        color: var(--werfen-text-gray);
         cursor: help;
     }
 
-    /* ========== BOTONES WERFEN PERSONALIZADOS ========== */
+    /* ========== BOTONES WERFEN PERSONALIZADOS (HTML buttons) ========== */
     .werfen-button-container {
-        margin: 0.5rem 0;
+        margin: 0.4rem 0;
     }
-
-    .werfen-button-container.full-width {
-        width: 100%;
-    }
+    .werfen-button-container.full-width { width: 100%; }
 
     .werfen-button {
         border: 2px solid transparent;
-        border-radius: 8px;
-        padding: 0.8rem 1.5rem;
+        border-radius: var(--border-radius);
+        padding: 0.65rem 1.4rem;
         font-weight: 600;
-        font-size: 0.9rem;
+        font-size: 0.88rem;
         cursor: pointer;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-
     .werfen-button.primary {
-        background: linear-gradient(45deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
+        background: var(--werfen-blue);
         color: white;
         border-color: var(--werfen-blue);
     }
-
     .werfen-button.primary:hover:not(.disabled) {
-        background: white !important;
-        color: var(--werfen-blue) !important;
-        border-color: var(--werfen-blue) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(6, 3, 141, 0.3);
+        background: white;
+        color: var(--werfen-blue);
+        border-color: var(--werfen-blue);
+        box-shadow: 0 4px 10px rgba(6,3,141,0.2);
     }
-
     .werfen-button.secondary {
-        background: linear-gradient(45deg, var(--werfen-orange) 0%, var(--werfen-orange-light) 100%);
+        background: var(--werfen-orange);
         color: white;
         border-color: var(--werfen-orange);
     }
-
     .werfen-button.secondary:hover:not(.disabled) {
-        background: white !important;
-        color: var(--werfen-orange) !important;
-        border-color: var(--werfen-orange) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(232, 119, 33, 0.3);
+        background: white;
+        color: var(--werfen-orange);
+        border-color: var(--werfen-orange);
     }
-
     .werfen-button.outline {
         background: transparent;
         border: 2px solid var(--werfen-blue);
         color: var(--werfen-blue);
     }
-
     .werfen-button.outline:hover:not(.disabled) {
         background: var(--werfen-blue);
         color: white;
-        transform: translateY(-2px);
     }
-
     .werfen-button.disabled {
         opacity: 0.6;
         cursor: not-allowed;
-        transform: none !important;
-        box-shadow: none !important;
     }
+    .werfen-button.full-width { width: 100%; }
 
-    .werfen-button.full-width {
-        width: 100%;
-    }
-
-    /* ========== ALERTAS Y MENSAJES ========== */
+    /* ========== ALERTAS ========== */
     .stAlert > div {
-        border-radius: 8px;
-        border-left: 4px solid var(--werfen-orange);
+        border-radius: var(--border-radius);
     }
-
-    .stSuccess > div {
-        background-color: rgba(232, 119, 33, 0.1);
-        border-left-color: var(--werfen-orange);
-    }
-
     .stInfo > div {
-        background-color: rgba(6, 3, 141, 0.1);
-        border-left-color: var(--werfen-blue);
+        border-left-color: var(--werfen-blue) !important;
     }
 
     /* ========== TABLAS ========== */
     .stDataFrame {
-        border-radius: 8px;
+        border-radius: var(--border-radius);
         overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--card-shadow);
     }
-
-    .stDataFrame thead th {
-        background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-blue-light) 100%);
-        color: white;
-        font-weight: 600;
-        padding: 1rem;
-    }
-
-    .stDataFrame tbody tr:nth-child(even) {
-        background-color: var(--werfen-gray);
-    }
-
     .stDataFrame tbody tr:hover {
-        background-color: rgba(6, 3, 141, 0.05);
-    }
-
-    /* ========== FORMULARIOS ========== */
-    .form-container {
-        background: white;
-        padding: 2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        border: 1px solid var(--werfen-gray-dark);
-        margin-bottom: 1rem;
-    }
-
-    .form-container h3 {
-        color: var(--werfen-blue);
-        margin-bottom: 1.5rem;
-        font-weight: 700;
-        border-bottom: 2px solid var(--werfen-orange);
-        padding-bottom: 0.5rem;
+        background-color: rgba(6,3,141,0.04) !important;
     }
 
     /* ========== TABS ========== */
-    .stTabs > div > div > div > div {
-        color: var(--werfen-blue);
-        font-weight: 600;
+    .stTabs [data-baseweb="tab"] {
+        color: var(--werfen-text-gray);
+        font-weight: 500;
     }
-
-    .stTabs > div > div > div > div[aria-selected="true"] {
-        color: var(--werfen-orange);
-        border-bottom-color: var(--werfen-orange);
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: var(--werfen-blue) !important;
+        border-bottom-color: var(--werfen-orange) !important;
+        font-weight: 700;
     }
 
     /* ========== CALENDARIO ========== */
     .calendar-container {
         background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        border: 1px solid var(--werfen-gray-dark);
+        border-radius: var(--border-radius);
+        padding: 1.25rem;
+        box-shadow: var(--card-shadow);
+        border: 1px solid #e8e8f0;
     }
-
     .calendar-header {
         background: linear-gradient(135deg, var(--werfen-blue) 0%, var(--werfen-orange) 100%);
         color: white;
-        padding: 1rem;
-        border-radius: 8px;
+        padding: 0.9rem 1rem;
+        border-radius: var(--border-radius);
         text-align: center;
         margin-bottom: 1rem;
         font-weight: 700;
@@ -561,61 +428,39 @@ def get_custom_css():
     /* ========== LOGO Y BRANDING ========== */
     .werfen-logo {
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
-
     .werfen-logo h1 {
-        font-family: 'Verdana', sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: var(--werfen-blue);
-        font-size: 3rem;
+        font-size: 2.5rem;
         font-weight: 800;
         margin: 0;
     }
-
     .werfen-subtitle {
         color: var(--werfen-blue);
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: 500;
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
 
-    /* ========== ANIMACIONES ========== */
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    /* ========== FORMULARIOS ========== */
+    .form-container {
+        background: white;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        box-shadow: var(--card-shadow);
+        border: 1px solid #e8e8f0;
+        border-top: 3px solid var(--werfen-blue);
+        margin-bottom: 1rem;
     }
-
-    .fade-in-up {
-        animation: fadeInUp 0.6s ease-out;
-    }
-
-    /* ========== RESPONSIVE ========== */
-    @media (max-width: 768px) {
-        .client-card {
-            padding: 1rem;
-        }
-        
-        .werfen-logo h1 {
-            font-family: 'Verdana', sans-serif;
-            color: var(--werfen-blue);
-            font-size: 2rem;
-        }
-        
-        .main-header h1 {
-            font-size: 1.8rem;
-        }
-    }
-
-    /* ========== SIDEBAR PERSONALIZADO ========== */
-    .css-1d391kg .css-1v0mbdj {
-        border-top: 3px solid var(--werfen-orange);
+    .form-container h3 {
+        color: var(--werfen-blue);
+        margin-bottom: 1.25rem;
+        font-weight: 700;
+        border-bottom: 2px solid var(--werfen-orange);
+        padding-bottom: 0.4rem;
     }
 
     /* ========== FOOTER ========== */
@@ -628,244 +473,70 @@ def get_custom_css():
         font-size: 0.85rem;
         line-height: 1.2;
     }
+    .werfen-footer p { margin: 0; }
 
     /* ========== OCULTAR BOTÓN FULLSCREEN DE IMÁGENES ========== */
     [data-testid="StyledFullScreenButton"],
     [data-testid="stImageFullScreenButton"],
-    button[title="View fullscreen"] {
-        display: none !important;
-    }
-    
-    /* Ocultar overlay de fullscreen */
+    button[title="View fullscreen"],
     [data-testid="imageFullScreenOverlay"] {
         display: none !important;
     }
 
-    /* ========== LOADER PERSONALIZADO WERFEN ========== */
-    /* Personalizar el contenedor del status widget en posición nativa */
+    /* ========== LOADER / SPINNER ========== */
     div[data-testid="stStatusWidget"] {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
     }
-
-    /* Ocultar el contenido interno original */
     div[data-testid="stStatusWidget"] > div:first-child {
         display: none !important;
     }
-
-    /* Agregar el spinner personalizado */
     div[data-testid="stStatusWidget"]::before {
         content: '' !important;
         display: block !important;
-        width: 40px !important;
-        height: 40px !important;
-        border: 4px solid rgba(6, 3, 141, 0.1) !important;
-        border-top: 4px solid #06038D !important;
-        border-right: 4px solid #E87721 !important;
+        width: 32px !important;
+        height: 32px !important;
+        border: 3px solid rgba(6,3,141,0.12) !important;
+        border-top: 3px solid #06038D !important;
+        border-right: 3px solid #E87721 !important;
         border-radius: 50% !important;
-        animation: werfen-spin 1s linear infinite !important;
+        animation: werfen-spin 0.8s linear infinite !important;
     }
-
-    /* Ocultar el texto de carga */
     div[data-testid="stStatusWidget"]::after {
         display: none !important;
     }
-
     @keyframes werfen-spin {
-        0% {
-            transform: rotate(0deg);
-        }
-        100% {
-            transform: rotate(360deg);
-        }
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
-
-    /* Loader alternativo con múltiples círculos */
-    .werfen-loader {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 8px;
-        padding: 2rem;
-    }
-
-    .werfen-loader-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        animation: werfen-bounce 1.4s ease-in-out infinite;
-    }
-
-    .werfen-loader-dot:nth-child(1) {
-        background: #06038D;
-        animation-delay: -0.32s;
-    }
-
-    .werfen-loader-dot:nth-child(2) {
-        background: #1a17a3;
-        animation-delay: -0.16s;
-    }
-
-    .werfen-loader-dot:nth-child(3) {
-        background: #E87721;
-        animation-delay: 0s;
-    }
-
-    @keyframes werfen-bounce {
-        0%, 80%, 100% {
-            transform: scale(0);
-            opacity: 0.5;
-        }
-        40% {
-            transform: scale(1);
-            opacity: 1;
-        }
-    }
-
-    /* Spinner durante rerun de Streamlit */
     .stSpinner > div {
         border-top-color: #06038D !important;
         border-right-color: #E87721 !important;
     }
-
-    /* Overlay de carga */
-    div[data-testid="stApp"]::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(5px);
-        z-index: 9999;
-        display: none;
-        justify-content: center;
-        align-items: center;
-    }
-
-    /* Barra de progreso personalizada */
     .stProgress > div > div > div {
         background: linear-gradient(90deg, #06038D 0%, #E87721 100%) !important;
     }
-
     .stProgress > div > div {
-        background-color: rgba(6, 3, 141, 0.1) !important;
+        background-color: rgba(6,3,141,0.1) !important;
+    }
+
+    /* ========== ANIMACIONES ========== */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(14px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in-up { animation: fadeInUp 0.4s ease-out; }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 768px) {
+        .client-card { padding: 0.9rem; }
+        div[data-testid="metric-container"] > div > div[data-testid="metric-value"] {
+            font-size: 1.8rem !important;
+        }
     }
     </style>
-    
-    <script>
-    // Forzar reestilizado después de que Streamlit cargue
-    setTimeout(function() {
-        const buttons = document.querySelectorAll('div[data-testid="stSidebar"] .stButton > button');
-        buttons.forEach(button => {
-            // Forzar estilos directamente
-            button.style.cssText = `
-                all: unset !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                width: 100% !important;
-                height: 55px !important;
-                margin: 10px 0 !important;
-                padding: 15px 20px !important;
-                border-radius: 12px !important;
-                border: 2px solid #e0e0e0 !important;
-                background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%) !important;
-                color: #06038D !important;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-                font-weight: 700 !important;
-                font-size: 16px !important;
-                text-align: center !important;
-                cursor: pointer !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
-                box-sizing: border-box !important;
-                letter-spacing: 0.8px !important;
-            `;
-            
-            // Agregar eventos de hover
-            button.addEventListener('mouseenter', function() {
-                if (!this.disabled) {
-                    this.style.background = 'linear-gradient(135deg, #06038D 0%, #1a17a3 100%)';
-                    this.style.color = '#ffffff';
-                    this.style.borderColor = '#06038D';
-                    this.style.transform = 'translateY(-4px)';
-                    this.style.boxShadow = '0 12px 30px rgba(6, 3, 141, 0.4)';
-                }
-            });
-            
-            button.addEventListener('mouseleave', function() {
-                if (!this.disabled && !this.closest('.nav-active')) {
-                    this.style.background = 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)';
-                    this.style.color = '#06038D';
-                    this.style.borderColor = '#e0e0e0';
-                    this.style.transform = 'translateY(0px)';
-                    this.style.boxShadow = '0 4px 8px rgba(6, 3, 141, 0.2)';
-                }
-            });
-        });
-        
-        // Aplicar estilos a botones activos
-        const activeButtons = document.querySelectorAll('.nav-active .stButton > button');
-        activeButtons.forEach(button => {
-            button.style.background = 'linear-gradient(135deg, #E87721 0%, #ff8c3d 100%)';
-            button.style.color = '#ffffff';
-            button.style.borderColor = '#E87721';
-            button.style.boxShadow = '0 8px 20px rgba(232, 119, 33, 0.3)';
-            button.style.transform = 'translateY(-2px)';
-        });
-    }, 200);
-    
-    // Re-aplicar estilos cada vez que Streamlit re-renderiza
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            if (mutation.type === 'childList') {
-                setTimeout(function() {
-                    const buttons = document.querySelectorAll('div[data-testid="stSidebar"] .stButton > button');
-                    buttons.forEach(button => {
-                        if (!button.hasAttribute('data-styled')) {
-                            button.style.cssText = `
-                                all: unset !important;
-                                display: flex !important;
-                                align-items: center !important;
-                                justify-content: center !important;
-                                width: 100% !important;
-                                height: 55px !important;
-                                margin: 10px 0 !important;
-                                padding: 15px 20px !important;
-                                border-radius: 12px !important;
-                                border: 2px solid #e0e0e0 !important;
-                                background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%) !important;
-                                color: #06038D !important;
-                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-                                font-weight: 700 !important;
-                                font-size: 16px !important;
-                                text-align: center !important;
-                                cursor: pointer !important;
-                                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                                box-shadow: 0 4px 8px rgba(6, 3, 141, 0.2) !important;
-                                box-sizing: border-box !important;
-                                letter-spacing: 0.8px !important;
-                            `;
-                            button.setAttribute('data-styled', 'true');
-                        }
-                    });
-                }, 100);
-            }
-        });
-    });
-    
-    // Observar cambios en la sidebar
-    setTimeout(function() {
-        const sidebar = document.querySelector('div[data-testid="stSidebar"]');
-        if (sidebar) {
-            observer.observe(sidebar, { childList: true, subtree: true });
-        }
-    }, 500);
-    </script>
     """
 
 def get_werfen_header():
@@ -878,31 +549,50 @@ def get_werfen_header():
 
 def get_client_card_html(client):
     """Genera HTML personalizado para tarjetas de cliente"""
+    tipo  = (client.get('tipo_cliente') or '').strip()
+    pais  = (client.get('pais') or '').strip()
+    tipo_badge = (
+        f'<span class="werfen-badge werfen-badge-orange" style="font-size:0.7rem;">{tipo}</span>'
+        if tipo else ''
+    )
+    pais_badge = (
+        f'<span class="werfen-badge werfen-badge-blue" style="font-size:0.7rem;margin-left:4px;">{pais}</span>'
+        if pais else ''
+    )
     return f"""
     <div class="client-card fade-in-up">
-        <h4>{client['name']}</h4>
-        <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:12px; row-gap:6px;">
-            <p><strong>Código AG:</strong> {client['codigo_ag'] or 'N/A'}</p>
-            <p><strong>CSR:</strong> {client['csr'] or 'N/A'}</p>
-            <p><strong>Vendedor:</strong> {client['vendedor'] or 'N/A'}</p>
-            <p><strong>Calendario SAP:</strong> {(client.get('calendario_sap') or '').strip() or 'N/A'}</p>
-            <p><strong>Número tarea SAP:</strong> {client.get('numero_tarea_sap') or 'N/A'}</p>
-            <p><strong>Tipo:</strong> {client.get('tipo_cliente', 'N/A') or 'N/A'}</p>
-            <p><strong>Región:</strong> {client.get('region', 'N/A') or 'N/A'}</p>
-            <p><strong>País:</strong> {client.get('pais', 'N/A') or 'N/A'}</p>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.55rem;">
+            <h4 style="margin:0;flex:1;padding-right:8px;">{client['name']}</h4>
+            <div style="white-space:nowrap;flex-shrink:0;">{tipo_badge}{pais_badge}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:2px 12px;">
+            <p><strong>AG:</strong> {client.get('codigo_ag') or 'N/A'}</p>
+            <p><strong>WE:</strong> {client.get('codigo_we') or 'N/A'}</p>
+            <p><strong>CSR:</strong> {client.get('csr') or 'N/A'}</p>
+            <p><strong>Vendedor:</strong> {client.get('vendedor') or 'N/A'}</p>
+            <p><strong>Cal. SAP:</strong> {(client.get('calendario_sap') or '').strip() or 'N/A'}</p>
+            <p><strong>Región:</strong> {client.get('region') or 'N/A'}</p>
             <p><strong>Estado:</strong> {client.get('estado') or 'N/A'}</p>
             <p><strong>Ciudad:</strong> {client.get('ciudad') or 'N/A'}</p>
         </div>
     </div>
     """
 
-def get_metric_card_html(title, value, subtitle="", color="#1f77b4"):
-    """Genera HTML para tarjetas de métricas con el mismo estilo que las tarjetas de clientes"""
+def get_metric_card_html(title, value, subtitle="", color="#06038D"):
+    """Genera HTML para tarjetas KPI con barra naranja, número grande azul y etiqueta gris"""
+    subtitle_html = (
+        f'<div style="font-size:0.76rem;color:#6b7280;margin-top:3px;">{subtitle}</div>'
+        if subtitle else ''
+    )
     return f"""
-    <div class="client-card fade-in-up" style="text-align: center;">
-        <h3 style="color: {color}; margin: 0 0 15px 0; font-size: 2.5em; font-weight: bold;">{value}</h3>
-        <h4 style="color: var(--werfen-blue); margin: 0 0 8px 0; font-size: 1.1rem; font-weight: 600;">{title}</h4>
-        {f'<p style="margin: 0; font-size: 0.9rem; color: #666;">{subtitle}</p>' if subtitle else ''}
+    <div style="background:#fff;border:1px solid #e8e8f0;border-radius:8px;padding:1.1rem 1.25rem;
+                box-shadow:0 2px 8px rgba(6,3,141,0.10);position:relative;overflow:hidden;
+                text-align:center;margin-bottom:0.75rem;">
+        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#E87721;"></div>
+        <div style="font-size:2.3rem;font-weight:700;color:#06038D;line-height:1.1;">{value}</div>
+        <div style="font-size:0.76rem;font-weight:600;color:#6b7280;text-transform:uppercase;
+                    letter-spacing:0.5px;margin-top:0.4rem;">{title}</div>
+        {subtitle_html}
     </div>
     """
 
