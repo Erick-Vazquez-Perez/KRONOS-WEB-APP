@@ -31,7 +31,7 @@ class UserRole(Enum):
     CS_USER = "glcsuser"
 
 
-SESSION_TTL_SECONDS = 8 * 60 * 60
+SESSION_TTL_SECONDS = 8 * 60 * 60  # 8 horas
 MAX_FAILED_ATTEMPTS = 10
 LOCKOUT_MINUTES = 10
 BCRYPT_ROUNDS = 12
