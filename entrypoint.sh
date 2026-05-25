@@ -1,19 +1,23 @@
 #!/bin/sh
-# Genera secrets.toml en runtime a partir de variables de entorno de Railway.
-# El archivo solo existe dentro del contenedor — nunca se versiona.
+set -e
+
+echo "[ENTRYPOINT] Iniciando configuración..."
+
 mkdir -p /app/.streamlit
 
 if [ -n "$SQLITECLOUD_CONNECTION_STRING" ]; then
-  cat > /app/.streamlit/secrets.toml << EOF
-SQLITECLOUD_CONNECTION_STRING = "$SQLITECLOUD_CONNECTION_STRING"
-EOF
-  echo "[ENTRYPOINT] secrets.toml generado correctamente"
+  printf 'SQLITECLOUD_CONNECTION_STRING = "%s"\n' \
+    "$SQLITECLOUD_CONNECTION_STRING" \
+    > /app/.streamlit/secrets.toml
+  echo "[ENTRYPOINT] secrets.toml generado OK"
 else
-  echo "[ENTRYPOINT] ADVERTENCIA: SQLITECLOUD_CONNECTION_STRING no definida"
+  echo "[ENTRYPOINT] ERROR: SQLITECLOUD_CONNECTION_STRING no definida"
+  exit 1
 fi
 
+echo "[ENTRYPOINT] Iniciando Streamlit..."
 exec streamlit run main.py \
-  --server.port=8501 \
+  --server.port=${PORT:-8501} \
   --server.address=0.0.0.0 \
   --server.headless=true \
   --server.enableCORS=false \

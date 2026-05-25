@@ -96,7 +96,10 @@ def main():
     if is_read_only_mode():
         # Usuario de solo lectura - Solo Dashboard, Clientes y Generar Calendarios
         page_options = ["Dashboard", "Clientes"]
-        help_text = f"Usuario {current_user['username']} - Solo lectura"
+        if current_user:
+            help_text = f"Usuario {current_user['username']} - Solo lectura"
+        else:
+            help_text = "Solo lectura"
     else:
         # Usuario administrador - Todas las opciones
         page_options = [
@@ -107,7 +110,10 @@ def main():
             "Generar Cartas",
             "Generar Calendarios Anuales"
         ]
-        help_text = f"Usuario {current_user['username']} - Permisos completos"
+        if current_user:
+            help_text = f"Usuario {current_user['username']} - Permisos completos"
+        else:
+            help_text = "Permisos completos"
 
         # Solo administradores del sistema pueden gestionar usuarios
         if auth_system.is_admin():
