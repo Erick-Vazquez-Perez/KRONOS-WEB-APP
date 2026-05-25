@@ -10,7 +10,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('dashboard_components.py'\\).read\\(\\)\\); print\\('dashboard_components.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('auth_system.py', encoding='utf-8'\\).read\\(\\)\\); print\\('auth_system.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('dashboard_components.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard_components.py OK'\\)\")",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(dir \"c:\\\\Users\\\\eperez4\\\\OneDrive - Werfen\\\\KRONOS 2.0\")"
     ]
   }
 }

@@ -19,6 +19,7 @@ client_calendar_test.db
 .env
 .env.local
 .env.production
+.env.docker.local
 
 # Cache de Python
 __pycache__/
