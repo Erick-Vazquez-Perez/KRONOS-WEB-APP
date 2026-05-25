@@ -6,9 +6,12 @@ echo "[ENTRYPOINT] Iniciando configuración..."
 mkdir -p /app/.streamlit
 
 if [ -n "$SQLITECLOUD_CONNECTION_STRING" ]; then
-  printf 'SQLITECLOUD_CONNECTION_STRING = "%s"\n' \
-    "$SQLITECLOUD_CONNECTION_STRING" \
-    > /app/.streamlit/secrets.toml
+  cat > /app/.streamlit/secrets.toml << EOF
+SQLITECLOUD_CONNECTION_STRING = "$SQLITECLOUD_CONNECTION_STRING"
+AUTH_PEPPER = "$AUTH_PEPPER"
+ADMIN_BOOTSTRAP_PASSWORD = "$ADMIN_BOOTSTRAP_PASSWORD"
+KRONOS_ENV = "production"
+EOF
   echo "[ENTRYPOINT] secrets.toml generado OK"
 else
   echo "[ENTRYPOINT] ERROR: SQLITECLOUD_CONNECTION_STRING no definida"
