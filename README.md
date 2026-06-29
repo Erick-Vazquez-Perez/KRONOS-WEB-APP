@@ -41,7 +41,7 @@ Sistema web desarrollado para Green Logistics México y Colombia que permite ges
    ```env
    GL_ENV=development
    LOCAL_DEVELOPMENT=true
-   SQLITECLOUD_CONNECTION_STRING=sqlitecloud://cdjydgzlhk.g5.sqlite.cloud:8860/client_calendar.db?apikey=umCTRDGxAR2FUkNbpDOihf47bM4bQR3tRKJ53qFzL7A
+   SQLITECLOUD_CONNECTION_STRING=sqlitecloud://crtu0q5fdz.g5.sqlite.cloud:8860/auth.sqlitecloud?apikey=f7H0upR3XAfa6mSYWa4WUBkbISoXMq5Wh2qj1tyO05g
    ```
 
 3. **Ejecutar aplicación:**
@@ -53,7 +53,7 @@ Sistema web desarrollado para Green Logistics México y Colombia que permite ges
 
 1. **En Streamlit Cloud → Settings → Secrets**, agregar:
    ```toml
-   SQLITECLOUD_CONNECTION_STRING = "sqlitecloud://cdjydgzlhk.g5.sqlite.cloud:8860/client_calendar.db?apikey=umCTRDGxAR2FUkNbpDOihf47bM4bQR3tRKJ53qFzL7A"
+   SQLITECLOUD_CONNECTION_STRING = "sqlitecloud://crtu0q5fdz.g5.sqlite.cloud:8860/auth.sqlitecloud?apikey=f7H0upR3XAfa6mSYWa4WUBkbISoXMq5Wh2qj1tyO05g"
    ```
 
 2. **Variables automáticas** (se detectan solas):

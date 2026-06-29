@@ -22,6 +22,9 @@ MESES_ES = {
     7: 'jul', 8: 'ago', 9: 'sep', 10: 'oct', 11: 'nov', 12: 'dic'
 }
 
+# Mapeo inverso: abreviatura -> número de mes (para interpretar fechas ya formateadas)
+MESES_ES_INV = {abbr: num for num, abbr in MESES_ES.items()}
+
 def format_date_spanish(date_obj):
     """
     Formatea una fecha en formato español: 01-ene, 15-mar, etc.
@@ -38,6 +41,24 @@ def format_date_spanish(date_obj):
     day = date_obj.day
     month = MESES_ES.get(date_obj.month, 'xxx')
     return f"{day:02d}-{month}"
+
+def month_number_from_spanish_date(date_str):
+    """
+    Obtiene el número de mes (1-12) a partir de una fecha en formato español
+    como '07-ene' o '23-dic'. Es independiente del locale del sistema.
+
+    Args:
+        date_str: Fecha formateada en español (ej: '07-ene')
+
+    Returns:
+        int | None: número de mes, o None si no se puede interpretar
+    """
+    if not isinstance(date_str, str) or not date_str:
+        return None
+    parts = date_str.split('-')
+    if len(parts) != 2:
+        return None
+    return MESES_ES_INV.get(parts[1].strip().lower())
 
 class CalendarGenerator:
     def __init__(self, template_path=None):
@@ -400,18 +421,16 @@ class CalendarGenerator:
             
             for d in dates:
                 if d['Fecha envío OC']:  # Solo procesar si hay fecha de OC
-                    try:
-                        # Convertir fecha para determinar el mes
-                        date_str = f"{year}-{d['Fecha envío OC']}"
-                        date_obj = datetime.strptime(date_str, '%Y-%d-%b')
-                        
-                        if date_obj.month <= 6:
-                            first_half.append(d)
-                        else:
-                            second_half.append(d)
-                    except (ValueError, TypeError):
-                        # Si hay error parseando la fecha, ponerla en primera mitad
-                        first_half.append(d)
+                    # Determinar el semestre por el número de mes.
+                    # IMPORTANTE: la abreviatura se interpreta con un mapeo propio en
+                    # español (NO strptime('%b'), que depende del locale del sistema y
+                    # falla con 'ene', 'abr', 'ago', 'dic' en locales no españoles,
+                    # enviando esas fechas a la columna equivocada).
+                    month = month_number_from_spanish_date(d['Fecha envío OC'])
+                    if month is not None and month > 6:
+                        second_half.append(d)  # Jul-Dic -> columnas derechas
+                    else:
+                        first_half.append(d)   # Ene-Jun -> columnas izquierdas
             
             # Cabeceras
             table_data.append(['Fecha envío OC', 'Fecha Entrega', 'Fecha envío OC', 'Fecha Entrega'])
